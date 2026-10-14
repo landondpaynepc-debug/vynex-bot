@@ -58,7 +58,8 @@ class Bot(discord.Client):
     async def setup_hook(self):
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
+        synced = await self.tree.sync(guild=guild)
+        logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
 
 
 bot = Bot()
@@ -97,19 +98,25 @@ def audit(i, reason):
     return f'{i.user} ({i.user.id}): {reason}'[:512]
 
 
-@bot.tree.command(description='Generate one private Vynex Tweaks Premium access key.')
+@bot.tree.command(description='Choose an app and generate one private access key.')
 @app_commands.guild_only()
 @app_commands.check(key_staff)
 @app_commands.checks.cooldown(1, 5)
-async def generate(i: discord.Interaction):
+@app_commands.describe(package='Choose which application this key unlocks.')
+@app_commands.choices(package=[
+    app_commands.Choice(name='Vynex Tweaks', value='tweaks'),
+    app_commands.Choice(name='VYNEX Premium Package', value='premium'),
+])
+async def generate(i: discord.Interaction, package: app_commands.Choice[str]):
     await i.response.defer(ephemeral=True)
-    key = await vynex.generate()
-    embed = discord.Embed(title='✅ Generated 1 Premium key', color=0x8B35EF)
-    embed.add_field(name='Tier', value='Premium', inline=False)
+    application = package.value
+    app_name = {'tweaks': 'Vynex Tweaks', 'premium': 'VYNEX Premium Package'}[application]
+    key = await vynex.generate(application)
+    embed = discord.Embed(title=f'✅ Generated 1 {app_name} key', color=0x8B35EF)
     embed.add_field(name='Expiry', value='Lifetime', inline=False)
-    embed.add_field(name='App', value=COMPANY[:1024], inline=False)
+    embed.add_field(name='App', value=app_name, inline=False)
     embed.add_field(name='Key', value=f'```{key}```', inline=False)
-    embed.add_field(name='Activation', value='Sign in to Vynex Tweaks, verify your email, and enter this key in the app.', inline=False)
+    embed.add_field(name='Activation', value=f'Sign in to {app_name}, verify your email, and enter this key in the app.', inline=False)
     embed.set_footer(text=f'Requested by {i.user.display_name} • Copy this key and keep it private.')
     await reply(i, embed=embed)
 
