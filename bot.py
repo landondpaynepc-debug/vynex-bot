@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import discord
 from vynex_client import VynexClient, VynexError
+from health_server import HealthServer
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -54,8 +55,17 @@ class Bot(discord.Client):
         super().__init__(intents=discord.Intents.default(),
                          allowed_mentions=discord.AllowedMentions.none())
         self.tree = app_commands.CommandTree(self)
+        self.health_server = HealthServer(self.is_ready)
+
+    async def close(self):
+        try:
+            await self.health_server.close()
+        finally:
+            await super().close()
 
     async def setup_hook(self):
+        port = await self.health_server.start()
+        logging.info('Render health server listening on 0.0.0.0:%s', port)
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)

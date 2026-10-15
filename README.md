@@ -28,7 +28,7 @@ Never share the token or `.env`. Back up `bot.sqlite3`, which stores moderation 
 - `/kick member [reason]`, `/ban member [reason]`, `/unban user_id`: membership moderation.
 - `/clear amount`: delete up to 100 recent messages, including pinned messages.
 
-Moderation checks the callerâ€™s permissions at runtime and enforces role hierarchy. All command replies are private. Kicks, bans, timeouts, and message cleanup include the moderator in Discordâ€™s audit reason. Warnings stay in the local database; warning commands do not DM members. There is no automatic spam filter.
+Moderation checks the callerÃ¢â‚¬â„¢s permissions at runtime and enforces role hierarchy. All command replies are private. Kicks, bans, timeouts, and message cleanup include the moderator in DiscordÃ¢â‚¬â„¢s audit reason. Warnings stay in the local database; warning commands do not DM members. There is no automatic spam filter.
 
 ## Vynex integration
 
@@ -43,3 +43,11 @@ The bot does not automatically retry key creation, because the endpoint has no i
 ## Validation
 
 Local checks cover slash command registration, request method/path/authentication, API response validation, and failure handling. No live keys or customer accounts were created during testing. Running the bot still requires your Discord token, server ID, and existing Vynex administrator password.
+
+## Render web service startup
+
+Keep the existing start command `python bot.py` and build command `pip install -r requirements.txt`. The bot now binds a small HTTP server to `0.0.0.0:$PORT` (default `10000`) before syncing Discord commands. This fixes Render's "No open ports detected" deployment timeout. No token or environment-variable changes are required.
+
+Use `/health` as the Render health-check path. `/` also reports liveness. `/ready` returns 200 only while Discord is ready, otherwise 503. Responses contain no credentials or user data. Shutdown closes the HTTP listener along with the Discord client.
+
+Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
