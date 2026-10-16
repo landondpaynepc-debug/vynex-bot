@@ -13,6 +13,7 @@ PANEL_CHANNEL_ID = 1542759018462715924
 CATEGORY_ID = 1542810493792550962
 TRANSCRIPT_CHANNEL_ID = 1542810514617536533
 STAFF_ROLE_ID = 1542769771844599878
+TICKET_COLOR = 0x2B2D31
 OPEN_ID = 'vynex:ticket:open:v2'
 CLOSE_ID = 'vynex:ticket:close:v2'
 KINDS = {'buy': 'Buy Tweaks', 'support': 'Support'}
@@ -134,9 +135,11 @@ class OpenSelect(discord.ui.Select):
 class TicketPanel(discord.ui.LayoutView):
     def __init__(self, manager):
         super().__init__(timeout=None)
-        self.add_item(discord.ui.TextDisplay(DESCRIPTION))
-        self.add_item(discord.ui.Separator(visible=False))
-        self.add_item(discord.ui.ActionRow(OpenSelect(manager)))
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(DESCRIPTION),
+            discord.ui.Separator(visible=False),
+            discord.ui.ActionRow(OpenSelect(manager)),
+            accent_colour=TICKET_COLOR))
 
 
 class CloseButton(discord.ui.Button):
@@ -156,8 +159,7 @@ class TicketControls(discord.ui.LayoutView):
         super().__init__(timeout=None)
         children = [discord.ui.TextDisplay(welcome or '### Ticket controls\nClose your ticket when you are finished.')]
         children.append(discord.ui.ActionRow(CloseButton(manager)))
-        for child in children:
-            self.add_item(child)
+        self.add_item(discord.ui.Container(*children, accent_colour=TICKET_COLOR))
 
 
 class ConfirmClose(discord.ui.LayoutView):
@@ -166,8 +168,9 @@ class ConfirmClose(discord.ui.LayoutView):
         self.manager, self.user_id = manager, user_id
         button = discord.ui.Button(label='Save transcript & close', style=discord.ButtonStyle.secondary)
         button.callback = self.confirm
-        self.add_item(discord.ui.TextDisplay('### Close this ticket?\nIts transcript will be saved to staff archives before this channel is deleted.'))
-        self.add_item(discord.ui.ActionRow(button))
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay('### Close this ticket?\nIts transcript will be saved to staff archives before this channel is deleted.'),
+            discord.ui.ActionRow(button), accent_colour=TICKET_COLOR))
 
     async def confirm(self, interaction):
         if interaction.user.id != self.user_id:
@@ -322,8 +325,9 @@ class TicketManager:
                             file = discord.File(local_file, filename=filename)
                             try:
                                 view = discord.ui.LayoutView(timeout=None)
-                                view.add_item(discord.ui.TextDisplay(f'### Ticket attachment\nTicket: {channel.id} · Message: {message.id}\nAuthor: {message.author.id}'))
-                                view.add_item(discord.ui.File(f'attachment://{filename}'))
+                                view.add_item(discord.ui.Container(
+                                    discord.ui.TextDisplay(f'### Ticket attachment\nTicket: {channel.id} · Message: {message.id}\nAuthor: {message.author.id}'),
+                                    discord.ui.File(f'attachment://{filename}'), accent_colour=TICKET_COLOR))
                                 saved = await archive.send(file=file, view=view, allowed_mentions=NO_MENTIONS)
                                 attachment_links[attachment.id] = saved.jump_url
                             finally:
@@ -334,8 +338,9 @@ class TicketManager:
                         file = discord.File(part, filename=part.name)
                         try:
                             view = discord.ui.LayoutView(timeout=None)
-                            view.add_item(discord.ui.TextDisplay(f'## Ticket transcript\nTicket: {channel.id} · {KINDS[info[1]]}\nOwner: {info[0]}\nClosed by: {interaction.user.id}\nMessages: {count} · Part {index}/{len(parts)}'))
-                            view.add_item(discord.ui.File(f'attachment://{part.name}'))
+                            view.add_item(discord.ui.Container(
+                                discord.ui.TextDisplay(f'## Ticket transcript\nTicket: {channel.id} · {KINDS[info[1]]}\nOwner: {info[0]}\nClosed by: {interaction.user.id}\nMessages: {count} · Part {index}/{len(parts)}'),
+                                discord.ui.File(f'attachment://{part.name}'), accent_colour=TICKET_COLOR))
                             await archive.send(file=file, view=view, allowed_mentions=NO_MENTIONS)
                         finally:
                             file.close()

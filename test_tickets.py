@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from tickets import (TicketManager, TicketPanel, TicketControls, DESCRIPTION, CATEGORY_ID,
-                     PANEL_CHANNEL_ID, TRANSCRIPT_CHANNEL_ID, OPEN_ID, write_transcripts)
+                     PANEL_CHANNEL_ID, TRANSCRIPT_CHANNEL_ID, OPEN_ID, TICKET_COLOR, write_transcripts)
 
 
 async def stream(values):
@@ -60,9 +60,9 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         panel = TicketPanel(f.manager)
         self.assertIsInstance(panel, discord.ui.LayoutView)
         self.assertTrue(panel.is_persistent())
-        self.assertEqual(panel.to_components()[0]['type'], 10)
-        self.assertNotIn(17, [item['type'] for item in panel.to_components()])
-        select = panel.to_components()[-1]['components'][0]
+        self.assertEqual(panel.to_components()[0]['type'], 17)
+        self.assertEqual(panel.to_components()[0]['accent_color'], TICKET_COLOR)
+        select = panel.to_components()[0]['components'][-1]['components'][0]
         self.assertEqual(select['custom_id'], OPEN_ID)
         self.assertEqual([o['label'] for o in select['options']], ['Buy Tweaks', 'Support'])
         self.assertIn('PayPal', DESCRIPTION)
@@ -86,7 +86,7 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mentions['users'], [42])
         self.assertEqual(mentions['roles'], [77])
         self.assertNotIn('everyone', mentions['parse'])
-        text = welcome['view'].to_components()[0]['content']
+        text = welcome['view'].to_components()[0]['components'][0]['content']
         self.assertIn('<@42>', text)
         self.assertIn('<@&77>', text)
         await f.manager.open_ticket(f.interaction(), 'support')
@@ -156,14 +156,15 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         staff = NS(id=567, roles=[f.staff], guild_permissions=NS(administrator=False, manage_channels=False))
         self.assertTrue(f.manager.can_close(staff, f.channels[0], f.guild.id))
 
-    async def test_ticket_controls_have_no_container_accents_or_red_buttons(self):
+    async def test_ticket_controls_have_dark_gray_containers_and_neutral_buttons(self):
         from tickets import ConfirmClose
         f = fixture()
         for view in (TicketPanel(f.manager), TicketControls(f.manager), ConfirmClose(f.manager, 42)):
+            self.assertEqual(view.to_components()[0]['type'], 17)
             def check(items):
                 for item in items:
-                    self.assertNotEqual(item['type'], 17)
-                    self.assertNotIn('accent_color', item)
+                    if item['type'] == 17:
+                        self.assertEqual(item['accent_color'], TICKET_COLOR)
                     if item['type'] == 2:
                         self.assertEqual(item['style'], discord.ButtonStyle.secondary.value)
                     check(item.get('components', []))
@@ -181,7 +182,8 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         message.edit.assert_awaited_once()
         request = message.edit.call_args.kwargs
         self.assertEqual(request['allowed_mentions'].to_dict()['parse'], [])
-        self.assertTrue(all(item['type'] != 17 for item in request['view'].to_components()))
+        self.assertEqual(request['view'].to_components()[0]['type'], 17)
+        self.assertEqual(request['view'].to_components()[0]['accent_color'], TICKET_COLOR)
 
     async def test_attachment_saved_and_linked_in_transcript_before_delete(self):
         f = fixture()
@@ -195,6 +197,9 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         channel.history = lambda **kw: stream([message])
         events = []
         async def archive(**kw):
+            container = kw['view'].to_components()[0]
+            self.assertEqual(container['type'], 17)
+            self.assertEqual(container['accent_color'], TICKET_COLOR)
             data = kw['file'].fp.read()
             if kw['file'].filename.endswith('.html'):
                 self.assertIn(b'https://discord.com/channels/10/20/30', data)

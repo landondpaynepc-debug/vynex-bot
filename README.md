@@ -70,4 +70,4 @@ The panel is posted automatically after a successful Render deployment. The HTTP
 
 New tickets notify only the opener and staff role `1542769771844599878` using explicit allowed-mention lists; everyone and other roles cannot be pinged by that message. Discord requires the staff role to be mentionable or the bot to have permission to mention non-mentionable roles for a notification to fire.
 
-Ticket panels, welcome messages, confirmations and archives use unboxed Components V2 layouts with no accent colors. Buttons use Discord's neutral secondary style; Discord controls the button background. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
+Ticket panels, welcome messages, confirmations and archives retain boxed Components V2 containers with a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
