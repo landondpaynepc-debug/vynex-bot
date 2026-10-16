@@ -62,6 +62,12 @@ def safe_link(url):
     return html.escape(url, quote=True) if urlsplit(url).scheme in ('https', 'http') else ''
 
 
+def has_component(message, custom_id):
+    def contains(items):
+        return any(item.get('custom_id') == custom_id or contains(item.get('components', [])) for item in items)
+    return contains([component.to_dict() for component in message.components])
+
+
 def message_html(message, attachment_links=None):
     author = html.escape(str(message.author))
     text = html.escape(message.content or '')
@@ -81,7 +87,7 @@ async def write_transcripts(channel, directory, limit, attachment_links=None):
     """Split at message boundaries; never discard messages to meet upload limits."""
     header = ('<!doctype html><html><head><meta charset="utf-8">'
               '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">'
-              '<title>Vynex ticket transcript</title><style>body{font-family:system-ui;margin:2em;background:#111;color:#eee}'
+              '<title>Vynex ticket transcript</title><style>body{font-family:system-ui;margin:2em;background:transparent;color:inherit}'
               'article{border-bottom:1px solid #555;padding:1em 0}.body,pre{white-space:pre-wrap;overflow-wrap:anywhere}'
               'a{color:#b5a2ff}</style></head><body>'
               f'<h1>Ticket #{channel.id}: {html.escape(channel.name)}</h1>'
@@ -128,14 +134,15 @@ class OpenSelect(discord.ui.Select):
 class TicketPanel(discord.ui.LayoutView):
     def __init__(self, manager):
         super().__init__(timeout=None)
-        self.add_item(discord.ui.Container(discord.ui.TextDisplay(DESCRIPTION), discord.ui.Separator(),
-                      discord.ui.ActionRow(OpenSelect(manager)), accent_colour=0x8B35EF))
+        self.add_item(discord.ui.TextDisplay(DESCRIPTION))
+        self.add_item(discord.ui.Separator(visible=False))
+        self.add_item(discord.ui.ActionRow(OpenSelect(manager)))
 
 
 class CloseButton(discord.ui.Button):
     def __init__(self, manager):
         self.manager = manager
-        super().__init__(label='Close Ticket', style=discord.ButtonStyle.danger, custom_id=CLOSE_ID)
+        super().__init__(label='Close Ticket', style=discord.ButtonStyle.secondary, custom_id=CLOSE_ID)
 
     async def callback(self, interaction):
         if not self.manager.authorized(interaction):
@@ -149,18 +156,18 @@ class TicketControls(discord.ui.LayoutView):
         super().__init__(timeout=None)
         children = [discord.ui.TextDisplay(welcome or '### Ticket controls\nClose your ticket when you are finished.')]
         children.append(discord.ui.ActionRow(CloseButton(manager)))
-        self.add_item(discord.ui.Container(*children, accent_colour=0x8B35EF))
+        for child in children:
+            self.add_item(child)
 
 
 class ConfirmClose(discord.ui.LayoutView):
     def __init__(self, manager, user_id):
         super().__init__(timeout=60)
         self.manager, self.user_id = manager, user_id
-        button = discord.ui.Button(label='Save transcript & close', style=discord.ButtonStyle.danger)
+        button = discord.ui.Button(label='Save transcript & close', style=discord.ButtonStyle.secondary)
         button.callback = self.confirm
-        self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay('### Close this ticket?\nIts transcript will be saved to staff archives before this channel is deleted.'),
-            discord.ui.ActionRow(button), accent_colour=0xED4245))
+        self.add_item(discord.ui.TextDisplay('### Close this ticket?\nIts transcript will be saved to staff archives before this channel is deleted.'))
+        self.add_item(discord.ui.ActionRow(button))
 
     async def confirm(self, interaction):
         if interaction.user.id != self.user_id:
@@ -200,11 +207,7 @@ class TicketManager:
         async with self.panel_lock:
             channel = await self.resolve(PANEL_CHANNEL_ID, discord.TextChannel)
             def ours(message):
-                if message.author.id != self.bot.user.id:
-                    return False
-                def contains(items):
-                    return any(item.get('custom_id') == OPEN_ID or contains(item.get('components', [])) for item in items)
-                return contains([component.to_dict() for component in message.components])
+                return message.author.id == self.bot.user.id and has_component(message, OPEN_ID)
             existing = None
             async for message in channel.pins(limit=100):
                 if ours(message): existing = message; break
@@ -221,6 +224,27 @@ class TicketManager:
             except discord.Forbidden:
                 logging.warning('Ticket panel posted; Manage Messages permission is needed to pin it.')
             return message
+
+    def welcome_text(self, owner_id, kind):
+        text = ('Tell staff which package you want, confirm PayPal as your payment method, and ask any purchase questions.'
+                if kind == 'buy' else 'Describe the problem, the app you are using, and any error messages or screenshots.')
+        return f'## {KINDS[kind]}\n<@{owner_id}>, welcome!\nStaff: <@&{self.staff_role_id}>\n{text}\n\nStaff will assist you here.'
+
+    async def refresh_open_tickets(self):
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            return
+        for channel in await guild.fetch_channels():
+            info = ticket_info(channel)
+            if info is None:
+                continue
+            try:
+                async for message in channel.history(limit=20, oldest_first=True):
+                    if message.author.id == self.bot.user.id and has_component(message, CLOSE_ID):
+                        await message.edit(view=TicketControls(self, self.welcome_text(*info)), allowed_mentions=NO_MENTIONS)
+                        break
+            except discord.HTTPException:
+                logging.warning('Unable to refresh existing ticket controls in channel %s.', channel.id)
 
     async def open_ticket(self, interaction, kind):
         if interaction.guild_id != self.guild_id or kind not in KINDS:
@@ -253,10 +277,9 @@ class TicketManager:
                     name=f'{"buy-tweaks" if kind == "buy" else "support"}-{member.id}', category=category,
                     overwrites=overwrites, topic=f'vynex-ticket:v1;owner={member.id};kind={kind}',
                     reason=f'Vynex {KINDS[kind]} ticket opened by {member.id}')
-                text = ('Tell staff which package you want, confirm PayPal as your payment method, and ask any purchase questions.'
-                        if kind == 'buy' else 'Describe the problem, the app you are using, and any error messages or screenshots.')
-                await channel.send(view=TicketControls(self, f'## {KINDS[kind]}\n<@{member.id}>, welcome!\n{text}\n\nStaff will assist you here.'),
-                                   allowed_mentions=NO_MENTIONS)
+                await channel.send(view=TicketControls(self, self.welcome_text(member.id, kind)),
+                                   allowed_mentions=discord.AllowedMentions(everyone=False, users=[member],
+                                       roles=[discord.Object(id=self.staff_role_id)], replied_user=False))
                 await interaction.followup.send(f'Your private ticket is ready: {channel.mention}', ephemeral=True)
         except (discord.HTTPException, RuntimeError) as error:
             logging.error('Ticket creation failed: %s', type(error).__name__)
@@ -299,9 +322,8 @@ class TicketManager:
                             file = discord.File(local_file, filename=filename)
                             try:
                                 view = discord.ui.LayoutView(timeout=None)
-                                view.add_item(discord.ui.Container(
-                                    discord.ui.TextDisplay(f'### Ticket attachment\nTicket: {channel.id} · Message: {message.id}\nAuthor: {message.author.id}'),
-                                    discord.ui.File(f'attachment://{filename}'), accent_colour=0x8B35EF))
+                                view.add_item(discord.ui.TextDisplay(f'### Ticket attachment\nTicket: {channel.id} · Message: {message.id}\nAuthor: {message.author.id}'))
+                                view.add_item(discord.ui.File(f'attachment://{filename}'))
                                 saved = await archive.send(file=file, view=view, allowed_mentions=NO_MENTIONS)
                                 attachment_links[attachment.id] = saved.jump_url
                             finally:
@@ -312,9 +334,8 @@ class TicketManager:
                         file = discord.File(part, filename=part.name)
                         try:
                             view = discord.ui.LayoutView(timeout=None)
-                            view.add_item(discord.ui.Container(
-                                discord.ui.TextDisplay(f'## Ticket transcript\nTicket: {channel.id} · {KINDS[info[1]]}\nOwner: {info[0]}\nClosed by: {interaction.user.id}\nMessages: {count} · Part {index}/{len(parts)}'),
-                                discord.ui.File(f'attachment://{part.name}'), accent_colour=0x8B35EF))
+                            view.add_item(discord.ui.TextDisplay(f'## Ticket transcript\nTicket: {channel.id} · {KINDS[info[1]]}\nOwner: {info[0]}\nClosed by: {interaction.user.id}\nMessages: {count} · Part {index}/{len(parts)}'))
+                            view.add_item(discord.ui.File(f'attachment://{part.name}'))
                             await archive.send(file=file, view=view, allowed_mentions=NO_MENTIONS)
                         finally:
                             file.close()

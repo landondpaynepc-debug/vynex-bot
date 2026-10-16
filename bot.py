@@ -79,6 +79,7 @@ class Bot(discord.Client):
     async def on_ready(self):
         try:
             await self.tickets.ensure_panel()
+            await self.tickets.refresh_open_tickets()
             logging.info('Components V2 ticket panel ready in channel 1542759018462715924.')
         except (discord.HTTPException, RuntimeError) as error:
             logging.error('Ticket panel setup failed (%s). Check configured channel types and View Channel, Send Messages, Read Message History permissions.', type(error).__name__)

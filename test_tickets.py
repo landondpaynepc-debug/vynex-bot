@@ -60,8 +60,9 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         panel = TicketPanel(f.manager)
         self.assertIsInstance(panel, discord.ui.LayoutView)
         self.assertTrue(panel.is_persistent())
-        self.assertEqual(panel.to_components()[0]['type'], 17)
-        select = panel.to_components()[0]['components'][-1]['components'][0]
+        self.assertEqual(panel.to_components()[0]['type'], 10)
+        self.assertNotIn(17, [item['type'] for item in panel.to_components()])
+        select = panel.to_components()[-1]['components'][0]
         self.assertEqual(select['custom_id'], OPEN_ID)
         self.assertEqual([o['label'] for o in select['options']], ['Buy Tweaks', 'Support'])
         self.assertIn('PayPal', DESCRIPTION)
@@ -80,13 +81,21 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(request['overwrites'][f.everyone].view_channel)
         self.assertTrue(request['overwrites'][f.owner].view_channel)
         self.assertTrue(request['overwrites'][f.staff].view_channel)
+        welcome = f.channels[0].send.call_args.kwargs
+        mentions = welcome['allowed_mentions'].to_dict()
+        self.assertEqual(mentions['users'], [42])
+        self.assertEqual(mentions['roles'], [77])
+        self.assertNotIn('everyone', mentions['parse'])
+        text = welcome['view'].to_components()[0]['content']
+        self.assertIn('<@42>', text)
+        self.assertIn('<@&77>', text)
         await f.manager.open_ticket(f.interaction(), 'support')
         self.assertEqual(f.guild.create_text_channel.call_count, 2)
         self.assertIn('kind=support', f.channels[-1].topic)
 
     async def test_panel_refresh_edits_existing_pinned_panel(self):
         f = fixture()
-        original = NS(author=f.me, components=[NS(to_dict=lambda: TicketPanel(f.manager).to_components()[0])], edit=AsyncMock())
+        original = NS(author=f.me, components=[NS(to_dict=lambda value=value: value) for value in TicketPanel(f.manager).to_components()], edit=AsyncMock())
         f.panel.pins = lambda **kw: stream([original])
         f.panel.history = lambda **kw: stream([])
         await f.manager.ensure_panel()
@@ -146,6 +155,33 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         await f.manager.open_ticket(f.interaction(), 'buy')
         staff = NS(id=567, roles=[f.staff], guild_permissions=NS(administrator=False, manage_channels=False))
         self.assertTrue(f.manager.can_close(staff, f.channels[0], f.guild.id))
+
+    async def test_ticket_controls_have_no_container_accents_or_red_buttons(self):
+        from tickets import ConfirmClose
+        f = fixture()
+        for view in (TicketPanel(f.manager), TicketControls(f.manager), ConfirmClose(f.manager, 42)):
+            def check(items):
+                for item in items:
+                    self.assertNotEqual(item['type'], 17)
+                    self.assertNotIn('accent_color', item)
+                    if item['type'] == 2:
+                        self.assertEqual(item['style'], discord.ButtonStyle.secondary.value)
+                    check(item.get('components', []))
+            check(view.to_components())
+
+    async def test_existing_ticket_refresh_has_no_repeat_pings(self):
+        f = fixture()
+        await f.manager.open_ticket(f.interaction(), 'support')
+        channel = f.channels[0]
+        control = TicketControls(f.manager).to_components()
+        message = NS(author=f.me, components=[NS(to_dict=lambda value=value: value) for value in control], edit=AsyncMock())
+        channel.history = lambda **kw: stream([message])
+        f.bot.get_guild = lambda guild_id: f.guild
+        await f.manager.refresh_open_tickets()
+        message.edit.assert_awaited_once()
+        request = message.edit.call_args.kwargs
+        self.assertEqual(request['allowed_mentions'].to_dict()['parse'], [])
+        self.assertTrue(all(item['type'] != 17 for item in request['view'].to_components()))
 
     async def test_attachment_saved_and_linked_in_transcript_before_delete(self):
         f = fixture()

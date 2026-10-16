@@ -65,3 +65,9 @@ Required bot permissions: View Channels, Send Messages, Manage Channels, Read Me
 Enable **Message Content Intent** in Discord Developer Portal → Bot → Privileged Gateway Intents. The bot requests that intent so transcripts include message text. Existing `DISCORD_TOKEN`, `GUILD_ID`, `KEY_ROLE_ID`, API URL and developer key remain the same. Category `1542810493792550962` must be a category; the other two IDs must be text channels in the configured server.
 
 The panel is posted automatically after a successful Render deployment. The HTTP port/health fix and both app-specific key choices are preserved.
+
+### Ticket mentions and neutral styling
+
+New tickets notify only the opener and staff role `1542769771844599878` using explicit allowed-mention lists; everyone and other roles cannot be pinged by that message. Discord requires the staff role to be mentionable or the bot to have permission to mention non-mentionable roles for a notification to fire.
+
+Ticket panels, welcome messages, confirmations and archives use unboxed Components V2 layouts with no accent colors. Buttons use Discord's neutral secondary style; Discord controls the button background. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
