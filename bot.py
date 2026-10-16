@@ -77,12 +77,13 @@ class Bot(discord.Client):
         logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
 
     async def on_ready(self):
-        try:
-            await self.tickets.ensure_panel()
-            await self.tickets.refresh_open_tickets()
-            logging.info('Components V2 ticket panel ready in channel 1542759018462715924.')
-        except (discord.HTTPException, RuntimeError) as error:
-            logging.error('Ticket panel setup failed (%s). Check configured channel types and View Channel, Send Messages, Read Message History permissions.', type(error).__name__)
+        for name, refresh in (('shop panel', self.tickets.ensure_panel),
+                              ('open ticket messages', self.tickets.refresh_open_tickets)):
+            try:
+                await refresh()
+                logging.info('Dark gray Components V2 %s refreshed.', name)
+            except (discord.HTTPException, RuntimeError) as error:
+                logging.error('Ticket %s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
 
 
 bot = Bot()
@@ -130,7 +131,8 @@ async def shop(i: discord.Interaction):
     await i.response.defer(ephemeral=True)
     try:
         panel = await bot.tickets.ensure_panel()
-        await reply(i, f'Ticket panel ready: {panel.jump_url}')
+        await bot.tickets.refresh_open_tickets()
+        await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 

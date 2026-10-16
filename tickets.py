@@ -242,7 +242,7 @@ class TicketManager:
             if info is None:
                 continue
             try:
-                async for message in channel.history(limit=20, oldest_first=True):
+                async for message in channel.history(limit=None, oldest_first=True):
                     if message.author.id == self.bot.user.id and has_component(message, CLOSE_ID):
                         await message.edit(view=TicketControls(self, self.welcome_text(*info)), allowed_mentions=NO_MENTIONS)
                         break

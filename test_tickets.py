@@ -176,7 +176,11 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         channel = f.channels[0]
         control = TicketControls(f.manager).to_components()
         message = NS(author=f.me, components=[NS(to_dict=lambda value=value: value) for value in control], edit=AsyncMock())
-        channel.history = lambda **kw: stream([message])
+        def history(**kw):
+            self.assertIsNone(kw['limit'])
+            self.assertTrue(kw['oldest_first'])
+            return stream([NS(author=f.owner, components=[])] * 25 + [message])
+        channel.history = history
         f.bot.get_guild = lambda guild_id: f.guild
         await f.manager.refresh_open_tickets()
         message.edit.assert_awaited_once()
