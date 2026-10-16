@@ -51,3 +51,17 @@ Keep the existing start command `python bot.py` and build command `pip install -
 Use `/health` as the Render health-check path. `/` also reports liveness. `/ready` returns 200 only while Discord is ready, otherwise 503. Responses contain no credentials or user data. Shutdown closes the HTTP listener along with the Discord client.
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
+
+## Components V2 shop and tickets
+
+On startup, the bot posts or refreshes a Components V2 panel in channel `1542759018462715924`, using the supplied Vynex purchase description. The dropdown has **Buy Tweaks** and **Support**. Administrators can run `/shop` to refresh the panel. Pinned panel messages are reused, so reconnects and redeploys do not create duplicate panels.
+
+Tickets are private text channels under category `1542810493792550962`. The opener, bot, administrators, and staff role `1542769771844599878` can access them. One active ticket per person per option is allowed. Persistent controls work after a restart, with ticket ownership retained in the channel topic.
+
+The owner, staff role `1542769771844599878`, or an administrator can select **Close Ticket**, then confirm. Conversation send permissions are frozen, attachments are copied to archive channel `1542810514617536533`, and complete HTML transcripts are posted there with links to the archived attachments. Long transcripts are split to fit Discord upload limits. Only after saving succeeds is the ticket channel deleted. If archiving fails, the channel is retained and its original send permissions are restored.
+
+Required bot permissions: View Channels, Send Messages, Manage Channels, Read Message History, Attach Files, and Embed Links. Manage Messages is used to pin the panel. Ensure these permissions apply in the panel, ticket category and transcript channel. Keep the transcript channel restricted to trusted staff.
+
+Enable **Message Content Intent** in Discord Developer Portal → Bot → Privileged Gateway Intents. The bot requests that intent so transcripts include message text. Existing `DISCORD_TOKEN`, `GUILD_ID`, `KEY_ROLE_ID`, API URL and developer key remain the same. Category `1542810493792550962` must be a category; the other two IDs must be text channels in the configured server.
+
+The panel is posted automatically after a successful Render deployment. The HTTP port/health fix and both app-specific key choices are preserved.

@@ -8,6 +8,7 @@ from datetime import timedelta
 import discord
 from vynex_client import VynexClient, VynexError
 from health_server import HealthServer
+from tickets import TicketManager
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -52,10 +53,13 @@ with database() as db:
 
 class Bot(discord.Client):
     def __init__(self):
-        super().__init__(intents=discord.Intents.default(),
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(intents=intents,
                          allowed_mentions=discord.AllowedMentions.none())
         self.tree = app_commands.CommandTree(self)
         self.health_server = HealthServer(self.is_ready)
+        self.tickets = TicketManager(self, GUILD_ID)
 
     async def close(self):
         try:
@@ -66,10 +70,18 @@ class Bot(discord.Client):
     async def setup_hook(self):
         port = await self.health_server.start()
         logging.info('Render health server listening on 0.0.0.0:%s', port)
+        self.tickets.register_views()
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
         logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
+
+    async def on_ready(self):
+        try:
+            await self.tickets.ensure_panel()
+            logging.info('Components V2 ticket panel ready in channel 1542759018462715924.')
+        except (discord.HTTPException, RuntimeError) as error:
+            logging.error('Ticket panel setup failed (%s). Check configured channel types and View Channel, Send Messages, Read Message History permissions.', type(error).__name__)
 
 
 bot = Bot()
@@ -106,6 +118,20 @@ def target_check(i, member):
 
 def audit(i, reason):
     return f'{i.user} ({i.user.id}): {reason}'[:512]
+
+
+@bot.tree.command(description='Post or refresh the Vynex Components V2 shop and support panel.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def shop(i: discord.Interaction):
+    await i.response.defer(ephemeral=True)
+    try:
+        panel = await bot.tickets.ensure_panel()
+        await reply(i, f'Ticket panel ready: {panel.jump_url}')
+    except (discord.HTTPException, RuntimeError):
+        await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
 @bot.tree.command(description='Choose an app and generate one private access key.')

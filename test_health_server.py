@@ -52,15 +52,18 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self, is_ready): pass
             async def start(self): events.append('http'); return 10000
             async def close(self): events.append('cleanup')
-        globals_ = {'discord':discord,'app_commands':app_commands,'HealthServer':FakeHealth,
-                    'GUILD_ID':1,'logging':SimpleNamespace(info=lambda *a:None)}
+        class FakeTickets:
+            def __init__(self, *args): pass
+            def register_views(self): events.append('views')
+        globals_ = {'discord':discord,'app_commands':app_commands,'HealthServer':FakeHealth,'TicketManager':FakeTickets,
+                    'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()
         async def sync(**kw): events.append('sync'); return []
         bot.tree.sync = sync
         await bot.setup_hook()
         await bot.close()
-        self.assertEqual(events,['http','sync','cleanup'])
+        self.assertEqual(events,['http','views','sync','cleanup'])
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)
