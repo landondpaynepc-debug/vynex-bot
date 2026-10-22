@@ -52,6 +52,10 @@ Use `/health` as the Render health-check path. `/` also reports liveness. `/read
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
 
+## Public community dashboard
+
+The public dashboard is posted or refreshed automatically in channel `1562754545631887461`. Its persistent dropdown has exactly **About Vynex Tweaks**, **Rules**, and **Assistance**. Every selection opens a temporary, private panel for the selecting member, leaving the shared dashboard unchanged. About uses the supplied Vynex feature descriptions. Rules presents the latest supplied community and advertising rules with Previous/Next navigation. Assistance displays the complete existing purchase/support panel and its **Buy Tweaks / Support** dropdown, opening tickets through the same private ticket system, staff permissions, pings and transcript archive. All panels retain dark gray Components V2 containers. The dashboard works after a restart; `/dashboard` (Manage Server required) refreshes it manually without posting duplicates. The bot needs View Channel, Send Messages and Read Message History in the dashboard channel; everyone using the dashboard needs access to that channel.
+
 ## Staff event logs
 
 Logs go to channel `1550300376853520434` using dark gray Components V2 containers with mentions disabled. Keep this channel restricted to trusted staff because key-generation logs contain the full license key, application, lifetime expiry, requesting staff member, channel and interaction ID. A failed log delivery does not generate another key; the requester receives the generated key plus a delivery warning, and Render receives an error containing no license key.
@@ -62,7 +66,7 @@ Single and bulk deleted-message events record channel/message IDs and cached aut
 
 ## Community rules
 
-The bot automatically posts or refreshes the complete community rules in text channel `1562749964017336391` on startup. Administrators or members with Manage Server can run `/rules` to refresh them manually. The supplied 20 rules, moderation policy and final notice are stored in `community_rules.txt`; formatting typos in rules 9 and 11 are corrected. The text is split into size-limited Components V2 messages with dark gray containers and no mentions. Existing bot-owned rule parts are edited on reconnect to avoid duplicate posts. The bot needs View Channel, Read Message History and Send Messages in the rules channel.
+The bot automatically posts or refreshes the complete community rules in text channel `1562749964017336391` on startup. Administrators or members with Manage Server can run `/rules` to refresh them manually. The latest supplied community rules, advertising policy, moderation policy and final notice are stored in `community_rules.txt`. The text is split into size-limited Components V2 messages with dark gray containers and no mentions. Existing bot-owned rule parts are edited on reconnect to avoid duplicate posts. The bot needs View Channel, Read Message History and Send Messages in the rules channel.
 
 ## Components V2 shop and tickets
 

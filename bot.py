@@ -11,6 +11,7 @@ from health_server import HealthServer
 from tickets import TicketManager
 from rules import RulesManager
 from event_logs import EventLogs
+from dashboard import DashboardManager
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -65,6 +66,7 @@ class Bot(discord.Client):
         self.tickets = TicketManager(self, GUILD_ID)
         self.rules = RulesManager(self, GUILD_ID)
         self.event_logs = EventLogs(self, GUILD_ID)
+        self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
 
     async def close(self):
         try:
@@ -76,6 +78,7 @@ class Bot(discord.Client):
         port = await self.health_server.start()
         logging.info('Render health server listening on 0.0.0.0:%s', port)
         self.tickets.register_views()
+        self.dashboard.register_view()
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
@@ -85,7 +88,8 @@ class Bot(discord.Client):
         for name, refresh in (('shop panel', self.tickets.ensure_panel),
                               ('open ticket messages', self.tickets.refresh_open_tickets),
                               ('community rules', self.rules.ensure_rules),
-                              ('event logs', self.event_logs.check)):
+                              ('event logs', self.event_logs.check),
+                              ('community dashboard', self.dashboard.ensure_dashboard)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
@@ -156,6 +160,17 @@ async def shop(i: discord.Interaction):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
+@bot.tree.command(description='Post or refresh the public Vynex community dashboard.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def dashboard(i: discord.Interaction):
+    await i.response.defer(ephemeral=True)
+    message = await bot.dashboard.ensure_dashboard()
+    await reply(i, f'Community dashboard ready: {message.jump_url}')
+
+
 @bot.tree.command(description='Send a test event to the configured staff logs channel.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
@@ -164,7 +179,7 @@ async def shop(i: discord.Interaction):
 async def logtest(i: discord.Interaction):
     await i.response.defer(ephemeral=True)
     ok = await bot.event_logs.send('Logging test', f'Requested by user {i.user.id}. Staff event logging is connected.')
-    await reply(i, 'Test sent to the staff logs channel.' if ok else 'Log delivery failed. Check the bot’s channel permissions.')
+    await reply(i, 'Test sent to the staff logs channel.' if ok else bot.event_logs.last_error)
 
 
 @bot.tree.command(description='Post or refresh the Components V2 community rules.')

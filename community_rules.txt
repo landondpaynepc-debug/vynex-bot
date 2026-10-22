@@ -5,221 +5,71 @@
 *By remaining in this server, you agree to follow the rules listed below. Please take a moment to read through them, as violations may result in moderation action.*
 
 *1. Respect Everyone*
-> Treat all members with respect, regardless of their experience, opinions, or skill level.
->
-> Harassment, bullying, discrimination, hate speech, and personal attacks are not allowed.
->
-> Do not start arguments or intentionally provoke other members.
->
-> Keep disagreements civil. If an issue gets out of hand, contact a staff member instead of escalating it.
->
-> Jokes are fine, but do not use them as an excuse to target or harass someone.
+> Treat all members with respect. Harassment, discrimination, hate speech, and unnecessary drama are not tolerated.
 
-*2. No Spam or Chat Abuse*
+*2. No Spamming*
+> Do not spam messages, emojis, mentions, or commands. Keep conversations in the appropriate channels.
 
-> Do not spam messages, emojis, stickers, GIFs, or reactions.
->
-> Avoid excessive caps, repeated messages, and unnecessary mentions.
->
-> Do not flood channels with unrelated messages.
->
-> Do not ping staff or other members repeatedly without a valid reason.
->
-> Keep conversations in their appropriate channels.
-
-*3. No Advertising or Self-Promotion*
-
-> Advertising other Discord servers, websites, services, or social media accounts without staff permission is prohibited.
->
-> Do not send unsolicited advertisements through direct messages to members of this community.
->
-> Do not promote competing tweak services or products without authorization.
->
-> Referral links, invite links, and promotional codes must be approved by staff before being posted.
+*3. No Advertising*
+> Do not advertise other servers, products, services, or social media without staff permission.
 
 *4. Keep Content Appropriate*
+> No NSFW content, gore, inappropriate media, or anything that violates Discord's Terms of Service.
 
-> No NSFW, sexually explicit, excessively graphic, or otherwise inappropriate content.
->
-> No gore, shock content, or disturbing media.
->
-> Do not post content intended to make other members uncomfortable.
->
-> Follow Discord's Terms of Service and Community Guidelines at all times.
+*5. No Scamming or Malicious Files*
+> Scamming, phishing, malware, suspicious downloads, and attempts to steal personal information are strictly prohibited.
 
-*5. No Scams or Malicious Files*
+*6. Safe Tweaking & Optimization*
+> Do not share harmful scripts or misleading tweaks. Explain what your files do, avoid false performance claims, and encourage users to back up their systems before making changes.
 
-> Scamming, phishing, impersonation, and attempts to steal accounts or personal information are strictly prohibited.
->
-> Never distribute malware, viruses, credential stealers, or other malicious software.
->
-> Do not share suspicious downloads or links that could compromise another member's device.
->
-> Do not falsely advertise products, claim fake results, or mislead members into purchasing a service.
->
-> Any suspicious files or links should be reported to staff immediately.
+*7. No Impersonation*
+> Do not impersonate staff, developers, or other members. Do not falsely claim to represent Vynex Tweaks.
 
-*6. Tweaks, Scripts & PC Safety*
+*8. Protect Privacy*
+> Do not share private information, leak personal details, or expose private conversations without permission.
 
-> Only download tweaks, scripts, and optimization tools from sources you trust.
->
-> Do not distribute malicious, destructive, or secretly harmful scripts.
->
-> Clearly explain what a shared script does and disclose any significant system changes it makes.
->
-> Do not present risky registry edits, debloat scripts, or system modifications as completely safe without proper evidence.
->
-> Do not pressure members into running commands they do not understand.
->
-> Never ask members to share passwords, authentication codes, recovery keys, or other sensitive credentials.
->
-> Vynex Tweaks is not responsible for damage caused by third-party files or modifications shared by members. Always back up important data before changing system settings.
+*9. Follow Staff Instructions*
+> Respect moderators and administrators. If you disagree with a decision, open a support ticket instead of arguing publicly.
 
-*7. No False Claims or Misleading Advice*
+*10. Use Channels Correctly*
+> Post in the appropriate channels, provide useful details when requesting support, and be patient while waiting for a response.
 
-> Do not make fake claims about FPS increases, reduced latency, or improved system performance.
->
-> Avoid guaranteeing results that depend on a user's hardware, software, or configuration.
->
-> Do not intentionally provide incorrect technical advice to mislead other members.
->
-> When sharing benchmarks or performance results, provide accurate information and relevant system specifications where possible.
->
-> Respect that different PCs may respond differently to the same optimization.
+*11. No Exploiting or Rule Evasion*
+> Do not exploit bots, abuse server features, evade punishments with alternate accounts, or attempt unauthorized access to accounts or systems.
 
-*8. Support & Help Channels*
+*12. Common Sense*
+> Staff may take action against behavior that harms the community, even if a specific situation is not directly listed above.
 
-> Use the appropriate channel when requesting help.
->
-> Provide useful information about your PC, including relevant hardware, Windows version, and the issue you are experiencing.
->
-> Be patient while waiting for support. Staff and community members may not always be available immediately.
->
-> Do not repeatedly open tickets for the same issue.
->
-> Do not argue with support staff because a solution does not work for your particular setup.
->
-> Never share passwords, private account information, or sensitive personal data in support tickets.
->
-*9. No Impersonation*
->
-> Do not impersonate Vynex Tweaks staff, developers, partners, or other community members.
->
-> Do not use misleading names, profile pictures, or identities to deceive others.
->
-> Do not falsely claim to be affiliated with Vynex Tweaks.
->
-> Report suspicious accounts pretending to represent the community.
+# Advertising Products & Services
 
-*10. No Drama or Unnecessary Disputes*
+> Advertising, selling, or promoting products and services within Vynex Tweaks must follow the rules below. These guidelines are in place to protect our community, our products, and our members from unauthorized sales, scams, and misleading promotions.
 
-> Do not bring personal disputes into public channels.
+*1. Unauthorized Selling & Reselling*
+> Do not sell, resell, redistribute, or share paid Vynex Tweaks products without explicit authorization from the Vynex Tweaks team. This includes tweaks, optimization packs, scripts, configurations, and other paid resources. Unauthorized distribution or resale may result in a permanent ban.
 
-> Avoid starting arguments over other communities, services, or individual members.
+*2. Ownership & Credit*
+> Do not claim ownership of another person's work, including scripts, tweaks, configurations, tools, or other digital resources. Always give proper credit to the original creator when sharing their work, and never remove ownership notices or attempt to pass someone else's work off as your own.
 
-> Do not encourage dogpiling, targeted harassment, or mass reporting.
+*3. Leaked or Stolen Content*
+> Sharing, selling, requesting, or distributing leaked, stolen, cracked, or otherwise unauthorized paid content is strictly prohibited. This includes content obtained without the creator's permission or distributed in violation of its licensing terms. Claiming that a leak is harmless does not make its distribution acceptable.
 
-> If you have a concern about a member or staff decision, raise it privately through the appropriate support channel.
+*4. Advertising & Self-Promotion*
+> Do not advertise third-party tweak services, competing products, Discord servers, websites, or other businesses without prior staff approval. This also applies to promotional links, referral codes, discount codes, and unsolicited advertisements sent through direct messages to community members. Contact staff if you wish to request permission to promote a legitimate service.
 
-*11. Privacy & Personal Information*
+*5. Official Sales & Partnerships*
+> All official sales, partnerships, sponsorships, giveaways, and promotional campaigns involving Vynex Tweaks must be approved by the appropriate staff members. Do not announce partnerships, offer unofficial discounts, promise rewards, or represent yourself as an authorized seller without permission from the Vynex Tweaks team.
 
-> Do not share another person's private information without their explicit permission.
->
-> Doxxing, threats to expose personal information, and attempts to identify anonymous members are prohibited.
->
-> Do not publish private messages, tickets, or staff discussions without authorization when doing so would expose private information.
->
-> Respect the privacy of everyone in the community.
+*6. Scams & Fraudulent Transactions*
+> Fraudulent sales, fake payment confirmations, chargeback abuse, phishing links, misleading offers, and attempts to obtain money or products through deception are prohibited. Sellers must accurately represent what they are offering, including its features, limitations, pricing, and delivery terms. Any suspected scam should be reported to staff immediately.
 
-*12. Voice Channel Rules*
+*7. Misleading Claims & False Advertising*
+> Do not make false or unsupported claims about a product's performance, safety, features, or results. Do not guarantee FPS increases, reduced input delay, or other performance improvements without reliable evidence. Any product or service promoted within the community must be represented honestly and transparently.
 
-> Do not mic spam, deafen spam, or repeatedly join and leave channels to disrupt others.
->
-> Avoid excessively loud audio, soundboards, and background noise.
->
-> Do not interrupt support sessions or intentionally disrupt conversations.
->
-> Follow staff instructions if a voice channel becomes disruptive.
+*8. Unauthorized Use of the Vynex Tweaks Brand*
+> Do not use the Vynex Tweaks name, logo, branding, or official materials to promote personal products or services in a way that suggests endorsement or affiliation without permission. Do not create fake official stores, impersonate authorized sellers, or mislead members into believing an unofficial product is an official Vynex Tweaks release.
 
-*13. Advertising Products & Services*
-
-> Do not sell, resell, or distribute paid Vynex Tweaks products without authorization.
->
-> Do not claim ownership of another person's scripts, tweaks, or other work.
->
-> Do not distribute leaked, stolen, or unauthorized paid content.
->
-> Any official sales, partnerships, giveaways, or promotions must follow the instructions provided by Vynex Tweaks staff.
->
-> Fraudulent transactions and deceptive sales practices are prohibited.
-
-*14. Follow Discord's Rules*
-
-> All members must comply with Discord's Terms of Service and Community Guidelines.
->
-> Do not use this server to coordinate malicious activity, evade platform restrictions, or engage in prohibited behavior.
->
-> Attempts to exploit Discord features to disrupt the community are not allowed.
-
-*15. Listen to Staff*
-
-> Follow reasonable instructions from authorized Vynex Tweaks moderators and administrators.
->
-> Do not interfere with active moderation or intentionally disrupt staff investigations.
->
-> If you disagree with a moderation decision, appeal through the appropriate channel rather than arguing publicly.
->
-> Do not impersonate staff or claim to have permissions you do not possess.
->
-> Staff members are expected to enforce these rules fairly and consistently.
-
-*16. No Rule Evasion*
-
-> Do not use alternate accounts to evade mutes, bans, or other moderation actions.
->
-> Do not delete and repost content to bypass moderation.
->
-> Do not encourage other members to break rules on your behalf.
->
-> Attempts to evade punishments may result in additional action.
-
-*17. No Exploitation or Abuse*
-
-> Do not exploit bots, tickets, verification systems, or other server features.
->
-> Do not abuse commands, loopholes, or permissions to disrupt the community.
->
-> Do not attempt to gain unauthorized access to accounts, systems, or private resources.
->
-> Report security vulnerabilities or serious technical issues to staff privately.
-
-*18. Use the Correct Channels*
-
-> Read channel descriptions before posting.
->
-> Keep support requests, general discussion, media, suggestions, and announcements in their designated channels.
->
-> Do not post the same question or content across multiple channels.
->
-> Follow any additional instructions posted in individual channels.
-
-*19. Giveaways & Community Events*
-
-> Follow the instructions and eligibility requirements for official giveaways and events.
->
-> Do not use alternate accounts to claim multiple entries or rewards.
->
-> Do not manipulate entries, results, or voting systems.
->
-> Report suspicious giveaway messages or fake prize announcements to staff.
-
-*20. Common Sense Applies*
-
-> These rules cover the most common situations, but they cannot account for every possible scenario.
->
-> Deliberately exploiting loopholes or engaging in behavior that seriously harms the community may still result in moderation action.
->
-> Staff may take action against behavior that threatens member safety, server security, or the integrity of Vynex Tweaks.
+*9. Reporting Violations*
+> If you encounter unauthorized sales, stolen content, suspicious links, or potentially fraudulent transactions, report the matter to the moderation team through the appropriate support channel. Provide relevant evidence when possible, and avoid publicly sharing sensitive payment details or personal information.
 
 # Moderation & Punishments
 

@@ -1,5 +1,6 @@
 """Staff event logging, without copying sensitive data into Render logs."""
 import logging
+import traceback
 
 import discord
 
@@ -17,12 +18,14 @@ def literal(value):
 class EventLogs:
     def __init__(self, bot, guild_id):
         self.bot, self.guild_id = bot, guild_id
+        self.last_error = ''
 
     async def channel(self):
         channel = self.bot.get_channel(LOG_CHANNEL_ID) or await self.bot.fetch_channel(LOG_CHANNEL_ID)
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != self.guild_id:
             raise RuntimeError('Logs channel must be a text channel in the configured server.')
-        permissions = channel.permissions_for(channel.guild.me)
+        member = channel.guild.me or await channel.guild.fetch_member(self.bot.user.id)
+        permissions = channel.permissions_for(member)
         if not permissions.view_channel or not permissions.send_messages:
             raise RuntimeError('Bot needs View Channel and Send Messages in the logs channel.')
         return channel
@@ -34,6 +37,7 @@ class EventLogs:
             logging.warning('View Audit Log permission is missing; external moderation logs require it.')
 
     async def send(self, title, body):
+        self.last_error = ''
         try:
             channel = await self.channel()
             stamp = discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -46,8 +50,15 @@ class EventLogs:
                 await channel.send(view=view, allowed_mentions=NO_MENTIONS)
             return True
         except (discord.HTTPException, RuntimeError) as error:
+            self.last_error = (str(error) if isinstance(error, RuntimeError) else
+                f'Discord refused log delivery (HTTP {error.status}, code {error.code}). Check View Channel and Send Messages in channel {LOG_CHANNEL_ID}.')
             # Never print the body: key events contain full license keys.
             logging.error('Discord event log delivery failed (%s); check logs channel permissions.', type(error).__name__)
+            return False
+        except Exception as error:
+            self.last_error = f'Logging failed ({type(error).__name__}). Check the Render error location and deployed bot version.'
+            locations = ' -> '.join(f'{frame.name}:{frame.lineno}' for frame in traceback.extract_tb(error.__traceback__))
+            logging.error('Discord log failure %s at %s', type(error).__name__, locations)
             return False
 
     async def key_generated(self, interaction, application, key):

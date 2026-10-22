@@ -38,6 +38,22 @@ class LogTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('SECRET-KEY', str(error.call_args))
         channel.send.assert_not_called()
 
+    async def test_missing_cached_bot_member_is_resolved(self):
+        logs, channel = fixture()
+        channel.guild.me = None
+        channel.guild.fetch_member = AsyncMock(return_value=NS(id=99))
+        self.assertTrue(await logs.send('Test', 'Test event'))
+        channel.guild.fetch_member.assert_awaited_once_with(99)
+
+    async def test_unexpected_error_reports_type_without_secret_body(self):
+        logs, channel = fixture()
+        channel.send.side_effect = ValueError('SECRET-KEY')
+        with patch('event_logs.logging.error') as error:
+            self.assertFalse(await logs.send('Key', 'SECRET-KEY'))
+        self.assertIn('ValueError', logs.last_error)
+        self.assertNotIn('SECRET-KEY', logs.last_error)
+        self.assertNotIn('SECRET-KEY', str(error.call_args))
+
     async def test_cached_uncached_bulk_and_log_channel_deletions(self):
         logs, channel = fixture()
         message = NS(id=7, author=NS(id=42), content='deleted text', attachments=[], embeds=[], components=[])

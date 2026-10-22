@@ -25,8 +25,10 @@ class RulesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(root['type'], 17)
             self.assertEqual(root['accent_color'], TICKET_COLOR)
             self.assertLessEqual(sum(len(c.get('content', '')) for c in root['components']), 4000)
-        for number in range(1, 21):
+        for number in range(1, 13):
             self.assertIn(f'*{number}. ', RULES_TEXT)
+        self.assertIn('# Advertising Products & Services', RULES_TEXT)
+        self.assertIn('*9. Reporting Violations*', RULES_TEXT)
         self.assertIn('# Moderation & Punishments', RULES_TEXT)
         self.assertIn('# Final Notice', RULES_TEXT)
 
