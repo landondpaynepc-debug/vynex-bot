@@ -52,6 +52,10 @@ Use `/health` as the Render health-check path. `/` also reports liveness. `/read
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
 
+## Community rules
+
+The bot automatically posts or refreshes the complete community rules in text channel `1562749964017336391` on startup. Administrators or members with Manage Server can run `/rules` to refresh them manually. The supplied 20 rules, moderation policy and final notice are stored in `community_rules.txt`; formatting typos in rules 9 and 11 are corrected. The text is split into size-limited Components V2 messages with dark gray containers and no mentions. Existing bot-owned rule parts are edited on reconnect to avoid duplicate posts. The bot needs View Channel, Read Message History and Send Messages in the rules channel.
+
 ## Components V2 shop and tickets
 
 On startup, the bot posts or refreshes a Components V2 panel in channel `1542759018462715924`, using the supplied Vynex purchase description. The dropdown has **Buy Tweaks** and **Support**. Administrators can run `/shop` to refresh the panel. Pinned panel messages are reused, so reconnects and redeploys do not create duplicate panels.

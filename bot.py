@@ -9,6 +9,7 @@ import discord
 from vynex_client import VynexClient, VynexError
 from health_server import HealthServer
 from tickets import TicketManager
+from rules import RulesManager
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -60,6 +61,7 @@ class Bot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.health_server = HealthServer(self.is_ready)
         self.tickets = TicketManager(self, GUILD_ID)
+        self.rules = RulesManager(self, GUILD_ID)
 
     async def close(self):
         try:
@@ -78,12 +80,13 @@ class Bot(discord.Client):
 
     async def on_ready(self):
         for name, refresh in (('shop panel', self.tickets.ensure_panel),
-                              ('open ticket messages', self.tickets.refresh_open_tickets)):
+                              ('open ticket messages', self.tickets.refresh_open_tickets),
+                              ('community rules', self.rules.ensure_rules)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
             except (discord.HTTPException, RuntimeError) as error:
-                logging.error('Ticket %s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
+                logging.error('%s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
 
 
 bot = Bot()
@@ -135,6 +138,17 @@ async def shop(i: discord.Interaction):
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
+
+
+@bot.tree.command(description='Post or refresh the Components V2 community rules.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def rules(i: discord.Interaction):
+    await i.response.defer(ephemeral=True)
+    messages = await bot.rules.ensure_rules()
+    await reply(i, f'Community rules refreshed: {messages[0].jump_url}')
 
 
 @bot.tree.command(description='Choose an app and generate one private access key.')
