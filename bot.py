@@ -10,6 +10,7 @@ from vynex_client import VynexClient, VynexError
 from health_server import HealthServer
 from tickets import TicketManager
 from rules import RulesManager
+from event_logs import EventLogs
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -56,12 +57,14 @@ class Bot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.moderation = True
         super().__init__(intents=intents,
                          allowed_mentions=discord.AllowedMentions.none())
         self.tree = app_commands.CommandTree(self)
         self.health_server = HealthServer(self.is_ready)
         self.tickets = TicketManager(self, GUILD_ID)
         self.rules = RulesManager(self, GUILD_ID)
+        self.event_logs = EventLogs(self, GUILD_ID)
 
     async def close(self):
         try:
@@ -81,12 +84,25 @@ class Bot(discord.Client):
     async def on_ready(self):
         for name, refresh in (('shop panel', self.tickets.ensure_panel),
                               ('open ticket messages', self.tickets.refresh_open_tickets),
-                              ('community rules', self.rules.ensure_rules)):
+                              ('community rules', self.rules.ensure_rules),
+                              ('event logs', self.event_logs.check)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
             except (discord.HTTPException, RuntimeError) as error:
                 logging.error('%s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
+
+    async def on_raw_message_delete(self, payload):
+        await self.event_logs.deleted(payload)
+
+    async def on_raw_bulk_message_delete(self, payload):
+        await self.event_logs.deleted(payload)
+
+    async def on_audit_log_entry_create(self, entry):
+        await self.event_logs.audit_entry(entry)
+
+    async def on_app_command_completion(self, interaction, command):
+        await self.event_logs.command_completed(interaction, command)
 
 
 bot = Bot()
@@ -140,6 +156,17 @@ async def shop(i: discord.Interaction):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
+@bot.tree.command(description='Send a test event to the configured staff logs channel.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def logtest(i: discord.Interaction):
+    await i.response.defer(ephemeral=True)
+    ok = await bot.event_logs.send('Logging test', f'Requested by user {i.user.id}. Staff event logging is connected.')
+    await reply(i, 'Test sent to the staff logs channel.' if ok else 'Log delivery failed. Check the bot’s channel permissions.')
+
+
 @bot.tree.command(description='Post or refresh the Components V2 community rules.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
@@ -165,6 +192,7 @@ async def generate(i: discord.Interaction, package: app_commands.Choice[str]):
     application = package.value
     app_name = {'tweaks': 'Vynex Tweaks', 'premium': 'VYNEX Premium Package'}[application]
     key = await vynex.generate(application)
+    logged = await bot.event_logs.key_generated(i, app_name, key)
     embed = discord.Embed(title=f'✅ Generated 1 {app_name} key', color=0x8B35EF)
     embed.add_field(name='Expiry', value='Lifetime', inline=False)
     embed.add_field(name='App', value=app_name, inline=False)
@@ -172,6 +200,8 @@ async def generate(i: discord.Interaction, package: app_commands.Choice[str]):
     embed.add_field(name='Activation', value=f'Sign in to {app_name}, verify your email, and enter this key in the app.', inline=False)
     embed.set_footer(text=f'Requested by {i.user.display_name} • Copy this key and keep it private.')
     await reply(i, embed=embed)
+    if not logged:
+        await reply(i, 'Key generated, but its staff log could not be delivered. Check the logs channel permissions.')
 
 
 @bot.tree.command(description='Record a warning for a member.')

@@ -57,6 +57,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             def register_views(self): events.append('views')
         globals_ = {'discord':discord,'app_commands':app_commands,'HealthServer':FakeHealth,'TicketManager':FakeTickets,
                     'RulesManager':FakeTickets,
+                    'EventLogs':FakeTickets,
                     'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()

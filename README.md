@@ -8,7 +8,7 @@ The bot requests real lifetime access keys from https://vynex-api.onrender.com. 
 1. Create an application and bot at https://discord.com/developers/applications and copy its bot token.
 2. Copy `.env.example` to `.env`. Enter the token and your server ID. Enable Developer Mode in Discord to copy IDs.
 3. The service URL is already set. Set `VYNEX_ADMIN_PASSWORD` to the existing value in your Vynex API Render environment. Enter it locally in `.env`; do not send it in chat. Customize `COMPANY_NAME` if desired. Set `KEY_ROLE_ID` to the staff role allowed to issue keys; `0` allows only administrators. Give this role only to trusted staff.
-4. Invite the bot using the `bot` and `applications.commands` scopes. Give it View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Moderate Members, Kick Members, and Ban Members. Place its role above members it will moderate. It does not need Administrator or privileged intents.
+4. Invite the bot using the `bot` and `applications.commands` scopes. Give it View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Moderate Members, Kick Members, Ban Members, and View Audit Log. Place its role above members it will moderate. Enable Message Content Intent for transcripts and deleted-message text. Administrator permission is not required.
 5. Open a terminal in this folder and run:
 
 ```powershell
@@ -51,6 +51,14 @@ Keep the existing start command `python bot.py` and build command `pip install -
 Use `/health` as the Render health-check path. `/` also reports liveness. `/ready` returns 200 only while Discord is ready, otherwise 503. Responses contain no credentials or user data. Shutdown closes the HTTP listener along with the Discord client.
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
+
+## Staff event logs
+
+Logs go to channel `1550300376853520434` using dark gray Components V2 containers with mentions disabled. Keep this channel restricted to trusted staff because key-generation logs contain the full license key, application, lifetime expiry, requesting staff member, channel and interaction ID. A failed log delivery does not generate another key; the requester receives the generated key plus a delivery warning, and Render receives an error containing no license key.
+
+Successful bot moderation commands (warn, timeout, remove timeout, kick, ban, unban and clear) record the moderator and command arguments. Discord audit events also record external kicks, bans, unbans, timeout changes and moderator message deletions. Give the bot **View Audit Log** for external moderation events. Bot audit entries are skipped to avoid duplicating its command logs. Ordinary self-deletions do not identify a deleting actor in Discord's raw deletion event.
+
+Single and bulk deleted-message events record channel/message IDs and cached author, text and attachment names. Uncached messages are explicitly marked unavailable; old deleted content cannot be fetched after deletion. Attachments are not downloaded by this logger. The logs channel itself is excluded from raw deletion logging to avoid feedback. Startup checks the log destination; `/logtest` (Manage Server required) sends a test message and reports delivery success. The bot needs **View Channel** and **Send Messages** in the logs channel.
 
 ## Community rules
 
