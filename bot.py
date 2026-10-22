@@ -94,7 +94,8 @@ class Bot(discord.Client):
                               ('community rules', self.rules.ensure_rules),
                               ('event logs', self.event_logs.check),
                               ('community dashboard', self.dashboard.ensure_dashboard),
-                              ('welcome channel', self.welcome.check)):
+                              ('welcome channel', self.welcome.check),
+                              ('automatic member role', self.welcome.check_auto_role)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
@@ -105,6 +106,7 @@ class Bot(discord.Client):
         await self.event_logs.deleted(payload)
 
     async def on_member_join(self, member):
+        await self.welcome.assign_role(member)
         await self.welcome.joined(member)
 
     async def on_raw_bulk_message_delete(self, payload):

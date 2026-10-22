@@ -6,6 +6,7 @@ import discord
 from ui_messages import TICKET_COLOR
 
 WELCOME_CHANNEL_ID = 1542758858886225930
+AUTO_ROLE_ID = 1542769773882908743
 
 
 class WelcomeView(discord.ui.LayoutView):
@@ -37,6 +38,39 @@ class WelcomeManager:
 
     async def check(self):
         await self.channel()
+
+    async def auto_role(self, guild):
+        role = guild.get_role(AUTO_ROLE_ID)
+        if role is None:
+            role = next((role for role in await guild.fetch_roles() if role.id == AUTO_ROLE_ID), None)
+        if role is None:
+            raise RuntimeError('Configured auto role is missing.')
+        me = guild.me or await guild.fetch_member(self.bot.user.id)
+        if not me.guild_permissions.manage_roles:
+            raise RuntimeError('Bot needs Manage Roles for automatic role assignment.')
+        if role.managed or role.is_default() or role >= me.top_role:
+            raise RuntimeError('Auto role must be assignable and below the bot’s highest role.')
+        return role
+
+    async def check_auto_role(self):
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            raise RuntimeError('Configured server is unavailable for auto-role checks.')
+        await self.auto_role(guild)
+
+    async def assign_role(self, member):
+        if member.guild.id != self.guild_id:
+            return False
+        if any(role.id == AUTO_ROLE_ID for role in member.roles):
+            return True
+        try:
+            role = await self.auto_role(member.guild)
+            await member.add_roles(role, reason='Vynex automatic role for new server member', atomic=True)
+            return True
+        except (discord.HTTPException, RuntimeError) as error:
+            logging.error('Auto-role assignment failed for member %s: %s. Check Manage Roles and role hierarchy.',
+                          member.id, str(error) if isinstance(error, RuntimeError) else type(error).__name__)
+            return False
 
     async def joined(self, member):
         if member.guild.id != self.guild_id:

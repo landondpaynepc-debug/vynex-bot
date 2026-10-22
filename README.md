@@ -54,6 +54,8 @@ Deploy the latest commit and look for `Render health server listening on 0.0.0.0
 
 ## Welcome messages and shared styling
 
+New joins automatically receive role `1542769773882908743` in the configured server. Give the bot **Manage Roles** and place its highest role above this role. The role must not be managed by an integration. Startup validates this configuration. Existing member roles are preserved; a role-assignment failure is logged and does not prevent the welcome message. Welcome previews do not assign roles, and existing members are not backfilled on restart.
+
 New member joins in the configured server post a dark gray Components V2 welcome card to channel `1542758858886225930`. The card shows the member's avatar, current server member count, a welcome mention and a short welcome notice. It has no channel-list section. Only the joining member can be pinged. `/welcometest` (Manage Server required) posts a preview using the requesting member. The bot requires View Channel and Send Messages in the welcome channel.
 
 **Before deploying this version, enable Server Members Intent in Discord Developer Portal → Bot → Privileged Gateway Intents.** The code requests the members intent so Discord sends join events. Keep Message Content Intent enabled for transcripts and deleted-message logs. No existing members are welcomed again on restart.
