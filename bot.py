@@ -12,6 +12,8 @@ from tickets import TicketManager
 from rules import RulesManager
 from event_logs import EventLogs
 from dashboard import DashboardManager
+from welcome import WelcomeManager
+from ui_messages import send_text
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -59,6 +61,7 @@ class Bot(discord.Client):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.moderation = True
+        intents.members = True
         super().__init__(intents=intents,
                          allowed_mentions=discord.AllowedMentions.none())
         self.tree = app_commands.CommandTree(self)
@@ -67,6 +70,7 @@ class Bot(discord.Client):
         self.rules = RulesManager(self, GUILD_ID)
         self.event_logs = EventLogs(self, GUILD_ID)
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
+        self.welcome = WelcomeManager(self, GUILD_ID)
 
     async def close(self):
         try:
@@ -89,7 +93,8 @@ class Bot(discord.Client):
                               ('open ticket messages', self.tickets.refresh_open_tickets),
                               ('community rules', self.rules.ensure_rules),
                               ('event logs', self.event_logs.check),
-                              ('community dashboard', self.dashboard.ensure_dashboard)):
+                              ('community dashboard', self.dashboard.ensure_dashboard),
+                              ('welcome channel', self.welcome.check)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
@@ -98,6 +103,9 @@ class Bot(discord.Client):
 
     async def on_raw_message_delete(self, payload):
         await self.event_logs.deleted(payload)
+
+    async def on_member_join(self, member):
+        await self.welcome.joined(member)
 
     async def on_raw_bulk_message_delete(self, payload):
         await self.event_logs.deleted(payload)
@@ -126,10 +134,10 @@ async def key_staff(i):
 
 
 async def reply(i, text=None, **kwargs):
-    if i.response.is_done():
-        await i.followup.send(text, ephemeral=True, **kwargs)
-    else:
-        await i.response.send_message(text, ephemeral=True, **kwargs)
+    async def sender(**payload):
+        send = i.followup.send if i.response.is_done() else i.response.send_message
+        return await send(ephemeral=True, **payload)
+    await send_text(sender, text, **kwargs)
 
 
 def target_check(i, member):
@@ -158,6 +166,17 @@ async def shop(i: discord.Interaction):
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
+
+
+@bot.tree.command(description='Send a welcome preview to the configured welcome channel.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def welcometest(i: discord.Interaction):
+    await i.response.defer(ephemeral=True)
+    ok = await bot.welcome.joined(i.user)
+    await reply(i, 'Welcome preview sent.' if ok else 'Welcome delivery failed. Check the configured channel and bot permissions.')
 
 
 @bot.tree.command(description='Post or refresh the public Vynex community dashboard.')
@@ -208,13 +227,9 @@ async def generate(i: discord.Interaction, package: app_commands.Choice[str]):
     app_name = {'tweaks': 'Vynex Tweaks', 'premium': 'VYNEX Premium Package'}[application]
     key = await vynex.generate(application)
     logged = await bot.event_logs.key_generated(i, app_name, key)
-    embed = discord.Embed(title=f'✅ Generated 1 {app_name} key', color=0x8B35EF)
-    embed.add_field(name='Expiry', value='Lifetime', inline=False)
-    embed.add_field(name='App', value=app_name, inline=False)
-    embed.add_field(name='Key', value=f'```{key}```', inline=False)
-    embed.add_field(name='Activation', value=f'Sign in to {app_name}, verify your email, and enter this key in the app.', inline=False)
-    embed.set_footer(text=f'Requested by {i.user.display_name} • Copy this key and keep it private.')
-    await reply(i, embed=embed)
+    await reply(i, f'## Generated 1 {app_name} key\n**Expiry:** Lifetime\n**App:** {app_name}\n'
+        f'**Key:**\n```{key}```\n**Activation:** Sign in to {app_name}, verify your email, and enter this key in the app.\n'
+        f'-# Requested by {discord.utils.escape_markdown(i.user.display_name)} • Copy this key and keep it private.')
     if not logged:
         await reply(i, 'Key generated, but its staff log could not be delivered. Check the logs channel permissions.')
 
@@ -242,10 +257,10 @@ async def warnings(i: discord.Interaction, member: discord.Member):
         rows = db.execute('SELECT * FROM warnings WHERE guild=? AND member=? ORDER BY id DESC LIMIT 10',
                           (i.guild_id, member.id)).fetchall()
         count = db.execute('SELECT COUNT(*) FROM warnings WHERE guild=? AND member=?', (i.guild_id, member.id)).fetchone()[0]
-    embed = discord.Embed(title=f'Warnings: {count}', color=0x8B35EF)
+    text = f'## Warnings: {count}\n'
     for row in rows:
-        embed.add_field(name=f"#{row['id']} • {row['created']} UTC", value=discord.utils.escape_markdown(row['reason']), inline=False)
-    await reply(i, embed=embed)
+        text += f"\n**#{row['id']} • {row['created']} UTC**\n{discord.utils.escape_markdown(row['reason'])}\n"
+    await reply(i, text)
 
 
 @bot.tree.command(description='Timeout a member for up to 28 days.')

@@ -3,6 +3,7 @@ import asyncio
 import logging
 
 import discord
+from ui_messages import send_text
 
 from rules import rules_parts
 from tickets import TicketPanel, NO_MENTIONS, TICKET_COLOR, has_component
@@ -84,7 +85,7 @@ class RulesPager(discord.ui.LayoutView):
 
     async def move(self, interaction, delta):
         if interaction.user.id != self.owner_id:
-            return await interaction.response.send_message('Open Community Rules from the dashboard to browse your own copy.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'Open Community Rules from the dashboard to browse your own copy.', ephemeral=True)
         page = min(max(0, self.page + delta), len(rules_parts()) - 1)
         await interaction.response.edit_message(view=RulesPager(self.manager, self.owner_id, page),
                                                 allowed_mentions=NO_MENTIONS)
@@ -106,7 +107,7 @@ class DashboardManager:
 
     async def choose(self, interaction, value):
         if interaction.guild_id != self.guild_id:
-            return await interaction.response.send_message('Use the dashboard in the Vynex server.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'Use the dashboard in the Vynex server.', ephemeral=True)
         try:
             if value == 'rules':
                 view = RulesPager(self, interaction.user.id)
@@ -115,12 +116,12 @@ class DashboardManager:
             elif value == 'assistance':
                 view = TicketPanel(self.tickets)
             else:
-                return await interaction.response.send_message('Choose an option from the dashboard menu.', ephemeral=True)
+                return await send_text(interaction.response.send_message, 'Choose an option from the dashboard menu.', ephemeral=True)
             await interaction.response.send_message(view=view, ephemeral=True, allowed_mentions=NO_MENTIONS)
         except (discord.HTTPException, RuntimeError):
             logging.exception('Dashboard selection failed.')
             send = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
-            await send('Unable to open that option. Please try again or contact staff.', ephemeral=True)
+            await send_text(send, 'Unable to open that option. Please try again or contact staff.', ephemeral=True)
 
     async def ensure_dashboard(self):
         async with self.lock:

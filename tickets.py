@@ -8,12 +8,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import discord
+from ui_messages import TICKET_COLOR, send_text
 
 PANEL_CHANNEL_ID = 1542759018462715924
 CATEGORY_ID = 1542810493792550962
 TRANSCRIPT_CHANNEL_ID = 1542810514617536533
 STAFF_ROLE_ID = 1542769771844599878
-TICKET_COLOR = 0x2B2D31
 OPEN_ID = 'vynex:ticket:open:v2'
 CLOSE_ID = 'vynex:ticket:close:v2'
 KINDS = {'buy': 'Buy Tweaks', 'support': 'Support'}
@@ -149,7 +149,7 @@ class CloseButton(discord.ui.Button):
 
     async def callback(self, interaction):
         if not self.manager.authorized(interaction):
-            return await interaction.response.send_message('Only this ticket’s owner or staff can close it.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'Only this ticket’s owner or staff can close it.', ephemeral=True)
         await interaction.response.send_message(view=ConfirmClose(self.manager, interaction.user.id), ephemeral=True,
                                                 allowed_mentions=NO_MENTIONS)
 
@@ -174,7 +174,7 @@ class ConfirmClose(discord.ui.LayoutView):
 
     async def confirm(self, interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message('This confirmation belongs to another user.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'This confirmation belongs to another user.', ephemeral=True)
         await self.manager.close_ticket(interaction)
         self.stop()
 
@@ -251,7 +251,7 @@ class TicketManager:
 
     async def open_ticket(self, interaction, kind):
         if interaction.guild_id != self.guild_id or kind not in KINDS:
-            return await interaction.response.send_message('Use the ticket panel in the Vynex server.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'Use the ticket panel in the Vynex server.', ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         try:
             async with self.open_lock:
@@ -260,7 +260,7 @@ class TicketManager:
                 channels = await interaction.guild.fetch_channels()
                 existing = next((c for c in channels if ticket_info(c) == (interaction.user.id, kind)), None)
                 if existing:
-                    return await interaction.followup.send(f'Your existing ticket: {existing.mention}', ephemeral=True)
+                    return await send_text(interaction.followup.send, f'Your existing ticket: {existing.mention}', ephemeral=True)
                 member = interaction.user
                 me = interaction.guild.me
                 if not any(role.id == self.staff_role_id for role in interaction.guild.roles):
@@ -283,21 +283,21 @@ class TicketManager:
                 await channel.send(view=TicketControls(self, self.welcome_text(member.id, kind)),
                                    allowed_mentions=discord.AllowedMentions(everyone=False, users=[member],
                                        roles=[discord.Object(id=self.staff_role_id)], replied_user=False))
-                await interaction.followup.send(f'Your private ticket is ready: {channel.mention}', ephemeral=True)
+                await send_text(interaction.followup.send, f'Your private ticket is ready: {channel.mention}', ephemeral=True)
         except (discord.HTTPException, RuntimeError) as error:
             logging.error('Ticket creation failed: %s', type(error).__name__)
-            await interaction.followup.send('Unable to open a ticket. Staff: check the configured category, staff role and bot channel permissions.', ephemeral=True)
+            await send_text(interaction.followup.send, 'Unable to open a ticket. Staff: check the configured category, staff role and bot channel permissions.', ephemeral=True)
 
     async def close_ticket(self, interaction):
         if not self.authorized(interaction):
-            return await interaction.response.send_message('Only this ticket’s owner or staff can close it.', ephemeral=True)
+            return await send_text(interaction.response.send_message, 'Only this ticket’s owner or staff can close it.', ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         async with self.close_lock:
             channel, original_overwrites = None, None
             try:
                 channel = await interaction.guild.fetch_channel(interaction.channel_id)
                 if not self.can_close(interaction.user, channel, interaction.guild_id):
-                    return await interaction.followup.send('This is not an active Vynex ticket.', ephemeral=True)
+                    return await send_text(interaction.followup.send, 'This is not an active Vynex ticket.', ephemeral=True)
                 archive = await self.resolve(TRANSCRIPT_CHANNEL_ID, discord.TextChannel)
                 if not self.bot.intents.message_content:
                     raise RuntimeError('Message Content Intent is required for complete transcripts.')
@@ -309,7 +309,7 @@ class TicketManager:
                         updated.send_messages = False
                     frozen[target] = updated
                 await channel.edit(overwrites=frozen, reason='Freeze Vynex ticket during transcript export')
-                await channel.send('Closing this ticket and saving its transcript. Please stop sending messages.', allowed_mentions=NO_MENTIONS)
+                await send_text(channel.send, 'Closing this ticket and saving its transcript. Please stop sending messages.', allowed_mentions=NO_MENTIONS)
                 with tempfile.TemporaryDirectory(prefix='vynex-transcript-') as directory:
                     limit = min(interaction.guild.filesize_limit - 1024, 8 * 1024 * 1024)
                     attachment_links = {}
@@ -344,10 +344,10 @@ class TicketManager:
                             await archive.send(file=file, view=view, allowed_mentions=NO_MENTIONS)
                         finally:
                             file.close()
-                await interaction.followup.send('Transcript saved to the staff archive. Closing the ticket now.', ephemeral=True)
+                await send_text(interaction.followup.send, 'Transcript saved to the staff archive. Closing the ticket now.', ephemeral=True)
                 await channel.delete(reason=f'Vynex ticket closed by {interaction.user.id}; transcript archived to {TRANSCRIPT_CHANNEL_ID}')
             except discord.NotFound:
-                await interaction.followup.send('The ticket channel is already closed or a configured channel is missing.', ephemeral=True)
+                await send_text(interaction.followup.send, 'The ticket channel is already closed or a configured channel is missing.', ephemeral=True)
             except (discord.HTTPException, RuntimeError, OSError) as error:
                 if channel is not None and original_overwrites is not None:
                     try:
@@ -355,4 +355,4 @@ class TicketManager:
                     except discord.HTTPException:
                         logging.error('Could not restore ticket send permissions after archive failure.')
                 logging.error('Ticket archive/close failed: %s', type(error).__name__)
-                await interaction.followup.send('Ticket kept open: transcript saving or channel cleanup failed. Staff should check Message Content Intent, Read Message History and archive permissions.', ephemeral=True)
+                await send_text(interaction.followup.send, 'Ticket kept open: transcript saving or channel cleanup failed. Staff should check Message Content Intent, Read Message History and archive permissions.', ephemeral=True)

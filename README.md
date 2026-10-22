@@ -52,6 +52,14 @@ Use `/health` as the Render health-check path. `/` also reports liveness. `/read
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
 
+## Welcome messages and shared styling
+
+New member joins in the configured server post a dark gray Components V2 welcome card to channel `1542758858886225930`. The card shows the member's avatar, current server member count, a welcome mention and a short welcome notice. It has no channel-list section. Only the joining member can be pinged. `/welcometest` (Manage Server required) posts a preview using the requesting member. The bot requires View Channel and Send Messages in the welcome channel.
+
+**Before deploying this version, enable Server Members Intent in Discord Developer Portal → Bot → Privileged Gateway Intents.** The code requests the members intent so Discord sends join events. Keep Message Content Intent enabled for transcripts and deleted-message logs. No existing members are welcomed again on restart.
+
+Key-generation cards, warnings, command replies and ticket/dashboard notices also use dark gray Components V2 containers. Long text responses split to fit Discord's limit; key responses stay private. This replaces the remaining legacy embeds.
+
 ## Public community dashboard
 
 The public dashboard is posted or refreshed automatically in channel `1562754545631887461`. Its persistent dropdown has exactly **About Vynex Tweaks**, **Rules**, and **Assistance**. Every selection opens a temporary, private panel for the selecting member, leaving the shared dashboard unchanged. About uses the supplied Vynex feature descriptions. Rules presents the latest supplied community and advertising rules with Previous/Next navigation. Assistance displays the complete existing purchase/support panel and its **Buy Tweaks / Support** dropdown, opening tickets through the same private ticket system, staff permissions, pings and transcript archive. All panels retain dark gray Components V2 containers. The dashboard works after a restart; `/dashboard` (Manage Server required) refreshes it manually without posting duplicates. The bot needs View Channel, Send Messages and Read Message History in the dashboard channel; everyone using the dashboard needs access to that channel.
