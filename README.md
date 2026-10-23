@@ -123,6 +123,10 @@ Ticket panels, welcome messages, confirmations and archives retain boxed Compone
 
 ## Link a personal Spotify account
 
+Giveaway entry buttons reload missing recovery records after rolling deployments. An orphaned, bot-owned active panel with zero entries can recreate its record on the next entry without changing its deadline. Panels showing existing entries are never reset; missing records are reported as unavailable rather than falsely ended. Keep giveaway recovery attachments in the staff logs channel.
+
+YouTube can reject Render-hosted audio requests with a sign-in challenge. The music command reports this hosting restriction explicitly. Spotify device controls do not remove that restriction or broadcast Spotify audio into Discord voice.
+
 `/spotify action:Link account` opens a private Components V2 panel with a Spotify sign-in button. After Spotify consent, use Now playing, Devices, Resume, Pause, Next, Previous, Select device, or Unlink account. The panel includes private playback buttons. Each command uses only the invoking member's Discord ID; another member cannot use that member's panel. Commands control playback on the member's own Spotify devices and do not broadcast Spotify audio into voice.
 
 The public Vynex API must deploy `spotify_account.py` and configure `SPOTIFY_CLIENT_ID`. Register `https://vynex-api.onrender.com/spotify/callback` as the app's redirect URI. PKCE is used, so no client secret is needed. Bot environment settings remain the existing API URL and administrator password. Spotify Premium and a permitted Developer app are required; development-mode apps currently permit up to five authorized users. Open Spotify on a phone or computer and start a track before using playback controls. A missing Client ID reports incomplete setup rather than pretending the account is linked.

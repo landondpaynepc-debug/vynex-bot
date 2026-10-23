@@ -161,7 +161,16 @@ class GiveawayManager:
                 await send_text(interaction.followup.send, 'Giveaways are recovering. Try again shortly.', ephemeral=True)
                 return
             item = self.states.get(interaction.message.id)
-            if item is None or item[0]['ended'] or time.time() >= item[0]['ends']:
+            if item is None:
+                # Another instance may have created this record during a rolling deploy.
+                await self.load()
+                item = self.states.get(interaction.message.id)
+            if item is None:
+                item = await self.recover_panel(interaction.message)
+            if item is None:
+                return await send_text(interaction.followup.send,
+                    'This giveaway record is unavailable. Staff must check its recovery record; it has not been marked ended.', ephemeral=True)
+            if item[0]['ended'] or time.time() >= item[0]['ends']:
                 return await send_text(interaction.followup.send, 'This giveaway has ended.', ephemeral=True)
             state, record = item
             key = str(interaction.user.id)
@@ -176,6 +185,30 @@ class GiveawayManager:
             with suppress(discord.HTTPException):
                 await interaction.message.edit(view=GiveawayView(self, updated), allowed_mentions=NO_MENTIONS)
             await send_text(interaction.followup.send, 'You are entered! Good luck.', ephemeral=True)
+
+    async def recover_panel(self, message):
+        """Recover an orphaned empty panel without inventing or discarding entrants."""
+        if getattr(getattr(message, 'author', None), 'id', None) != self.bot.user.id:
+            return None
+        def texts(nodes):
+            for node in nodes:
+                if node.get('type') == 10:
+                    yield node.get('content', '')
+                yield from texts(node.get('components', []))
+        content = '\n'.join(texts([component.to_dict() for component in message.components]))
+        match = re.fullmatch(
+            r'## Giveaway — (.+)\n(.*?)\n\n\*\*Hosted by:\*\* <@(\d+)>\n'
+            r'\*\*Entries:\*\* 0\n\*\*Ends:\*\* <t:(\d+):F> \(<t:\4:R>\)\n'
+            r'\nPress \*\*Enter Giveaway\*\* below\. One entry per member\.', content, re.S)
+        if match is None or int(match[4]) <= time.time():
+            return None
+        state = dict(version=1, guild=self.guild_id, channel=message.channel.id, message=message.id,
+            host=int(match[3]), prize=re.sub(r'\\([\\*_~|`])', r'\1', match[1]),
+            description=match[2], ends=int(match[4]), entries={}, ended=False, winner=None, announced=False)
+        record = await self.save(state)
+        self.states[message.id] = (state, record)
+        logging.info('Recovered empty active giveaway %s from its bot-owned panel.', message.id)
+        return state, record
 
     async def tick(self):
         async with self.lock:

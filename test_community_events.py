@@ -52,6 +52,44 @@ def fixture():
 
 
 class CommunityEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_state_reloads_durable_record_before_rejecting_entry(self):
+        f = fixture()
+        await f.manager.create(f.request, 'Prize', 'Text', 3600)
+        f.manager.states.clear()
+        await f.manager.enter(f.entry())
+        self.assertIn('42', f.manager.states[555][0]['entries'])
+
+    async def test_orphan_empty_panel_is_saved_and_accepts_entry(self):
+        f = fixture()
+        state = dict(ended=False, prize='One package', description='Good luck!', host=42,
+                     entries={}, ends=9999999999)
+        f.message.author = f.bot.user
+        f.message.channel = f.request.channel
+        f.message.channel.id = 20
+        f.message.components = [discord.components._component_factory(root)
+            for root in GiveawayView(f.manager, state).to_components()]
+        f.manager.loaded = True
+        await f.manager.enter(f.entry())
+        self.assertEqual(f.manager.states[555][0]['ends'], 9999999999)
+        self.assertIn('42', f.manager.states[555][0]['entries'])
+        self.assertEqual(len(f.records), 1)
+
+    async def test_unknown_panel_never_discards_existing_entries(self):
+        f = fixture()
+        state = dict(ended=False, prize='Prize', description='Text', host=42,
+                     entries={'43': 'Member'}, ends=9999999999)
+        f.message.author = f.bot.user
+        f.message.components = [discord.components._component_factory(root)
+            for root in GiveawayView(f.manager, state).to_components()]
+        f.manager.loaded = True
+        request = f.entry()
+        await f.manager.enter(request)
+        self.assertFalse(f.manager.states)
+        reply = request.followup.send.call_args.kwargs['view'].to_components()[0]['components'][0]['content']
+        self.assertIn('record is unavailable', reply)
+        self.assertNotIn('has ended', reply)
+        self.assertFalse(f.records)
+
     async def test_production_errors_identify_http_code_and_command(self):
         source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
         handler = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'error_handler')

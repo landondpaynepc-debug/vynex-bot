@@ -31,6 +31,13 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_host_signin_block_reports_cause_and_spotify_limit(self):
+        f = fixture()
+        with patch('music.extract', side_effect=Exception('Sign in to confirm you’re not a bot')):
+            with self.assertRaisesRegex(MusicError, 'Render server') as error:
+                await f.manager.resolve('a song')
+        self.assertIn('does not broadcast into voice', str(error.exception))
+
     async def test_empty_song_search_retries_with_audio_qualifier(self):
         from music import extract
         extractor = MagicMock()

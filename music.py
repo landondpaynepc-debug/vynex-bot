@@ -254,6 +254,10 @@ class MusicManager:
             raise
         except Exception as error:
             logging.error('Music lookup failed (%s).', type(error).__name__)
+            if 'confirm you' in str(error).lower() and 'not a bot' in str(error).lower():
+                raise MusicError('YouTube is blocking audio requests from this Render server with a sign-in check. '
+                    'Discord voice playback is unavailable from this source right now. '
+                    'Use /spotify to control music on your own Spotify device; it does not broadcast into voice.') from error
             raise MusicError('That track could not be loaded. Try another song or YouTube link; the source may restrict playback.') from error
         track['spotify'] = spotify
         return track
