@@ -31,6 +31,16 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_rate_limited_ack_does_not_raise_or_repeat_requests(self):
+        f = fixture()
+        request = NS(response=NS(send_message=AsyncMock(side_effect=discord.HTTPException(
+            NS(status=429, reason='Too Many Requests', headers={'Retry-After':'120'}), 'Rate limited'))))
+        self.assertFalse(await f.manager.acknowledge(request, 'Music'))
+        self.assertFalse(await f.manager.acknowledge(request, 'Music'))
+        request.response.send_message.assert_awaited_once()
+        result = await f.manager.control(f.request, 'leave')
+        self.assertIn('Left voice', result)
+        f.voice.disconnect.assert_awaited_once()
     async def test_controls_do_not_wait_for_loading_lock(self):
         f = fixture()
         f.voice.is_playing.return_value = True
@@ -87,15 +97,16 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
         async def check(i): return True
         from ui_messages import text_view
         scope = dict(discord=discord, asyncio=asyncio, app_commands=app_commands,
-            bot=NS(tree=tree, music=NS(play=AsyncMock(side_effect=asyncio.TimeoutError))),
+            bot=NS(tree=tree, music=NS(play=AsyncMock(side_effect=asyncio.TimeoutError),
+                acknowledge=AsyncMock(return_value=True))),
             server_only=check, text_view=text_view, MusicError=MusicError, logging=MagicMock())
         exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-timeout-test', 'exec'), scope)
         request = NS(id=123, response=NS(send_message=AsyncMock()), edit_original_response=AsyncMock())
         await tree.get_command('play').callback(request, 'test song')
         self.assertEqual(request.edit_original_response.await_count, 1)
-        first = request.response.send_message.call_args
+        first_text = scope['bot'].music.acknowledge.call_args.args[1]
         last = request.edit_original_response.call_args
-        self.assertIn('Searching', first.kwargs['view'].to_components()[0]['components'][0]['content'])
+        self.assertIn('Searching', first_text)
         self.assertIn('timed out', last.kwargs['view'].to_components()[0]['components'][0]['content'])
         await client.close()
 
@@ -182,8 +193,14 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
         tree = app_commands.CommandTree(client)
         async def check(i): return True
         scope = dict(discord=discord, app_commands=app_commands, bot=NS(tree=tree), server_only=check)
-        for name in ('play', 'music'):
+        for name in ('play', 'music', 'joinvc', 'leave'):
             command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
             exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-command-test', 'exec'), scope)
         self.assertEqual(len(tree.get_command('music').to_dict(tree)['options'][0]['choices']), 7)
+        request = NS()
+        scope['music_control_response'] = AsyncMock()
+        await tree.get_command('joinvc').callback(request)
+        scope['music_control_response'].assert_awaited_with(request, 'join')
+        await tree.get_command('leave').callback(request)
+        scope['music_control_response'].assert_awaited_with(request, 'leave')
         await client.close()

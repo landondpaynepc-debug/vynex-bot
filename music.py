@@ -5,6 +5,7 @@ from contextlib import suppress
 import logging
 import re
 import shutil
+import time
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -41,8 +42,7 @@ class MusicButton(discord.ui.Button):
         self.manager, self.action = manager, action
 
     async def callback(self, interaction):
-        await interaction.response.send_message(view=text_view('Applying music control…'), ephemeral=True,
-                                                allowed_mentions=discord.AllowedMentions.none())
+        acknowledged = await self.manager.acknowledge(interaction, 'Applying music control…')
         succeeded = False
         try:
             result = await asyncio.wait_for(self.manager.control(interaction, self.action), timeout=20)
@@ -54,7 +54,9 @@ class MusicButton(discord.ui.Button):
         except Exception as error:
             logging.exception('Music control button failed.')
             result = f'Music control failed ({type(error).__name__}). Check the Render error.'
-        await interaction.edit_original_response(view=text_view(result), allowed_mentions=discord.AllowedMentions.none())
+        if acknowledged:
+            with suppress(discord.HTTPException):
+                await interaction.edit_original_response(view=text_view(result), allowed_mentions=discord.AllowedMentions.none())
         if succeeded and self.manager.text_channel:
             with suppress(discord.HTTPException, asyncio.TimeoutError):
                 title = self.manager.current['title'] if self.manager.current else 'Nothing'
@@ -142,11 +144,32 @@ class MusicManager:
         self.generation = 0
         self.last_playback_error = ''
         self.control_message = None
+        self.reply_blocked_until = 0
+
+    async def acknowledge(self, interaction, text):
+        if time.monotonic() < self.reply_blocked_until:
+            return False
+        try:
+            await interaction.response.send_message(view=text_view(text), ephemeral=True,
+                                                    allowed_mentions=discord.AllowedMentions.none())
+            return True
+        except discord.HTTPException as error:
+            if error.status != 429:
+                raise
+            try:
+                retry = max(60, float(error.response.headers.get('Retry-After', 60)))
+            except (AttributeError, ValueError, TypeError):
+                retry = 60
+            self.reply_blocked_until = time.monotonic() + retry
+            logging.warning('Discord rejected music acknowledgement with HTTP 429. Pausing music response requests for %s seconds; voice actions can still run.', retry)
+            return False
 
     def register_view(self):
         self.bot.add_view(MusicPanel(self))
 
     async def publish_controls(self, text):
+        if time.monotonic() < self.reply_blocked_until:
+            return
         view = MusicPanel(self, text)
         if self.control_message and self.control_message.channel.id == self.text_channel.id:
             try:

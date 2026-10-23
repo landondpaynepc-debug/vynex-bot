@@ -186,10 +186,13 @@ async def shop(i: discord.Interaction):
 @app_commands.check(server_only)
 @app_commands.checks.cooldown(1, 5)
 async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
-    await i.response.send_message(view=text_view('## Music\nSearching for your track…'), ephemeral=True,
-                                  allowed_mentions=discord.AllowedMentions.none())
+    acknowledged = await bot.music.acknowledge(i, '## Music\nSearching for your track…')
     async def progress(message):
-        await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
+        if acknowledged:
+            try:
+                await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException as error:
+                logging.warning('Music progress response rejected: HTTP %s, code %s.', error.status, error.code)
     try:
         track = await asyncio.wait_for(bot.music.play(i, query, progress=progress), timeout=45)
         await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
@@ -210,16 +213,37 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
     ('Join my voice channel', 'join'), ('Pause', 'pause'), ('Resume', 'resume'), ('Skip', 'skip'),
     ('Show queue', 'queue'), ('Stop and clear queue', 'stop'), ('Leave voice', 'leave')]])
 async def music(i: discord.Interaction, action: app_commands.Choice[str]):
-    await i.response.send_message(view=text_view('## Music controls\nApplying your music control…'), ephemeral=True,
-                                  allowed_mentions=discord.AllowedMentions.none())
+    await music_control_response(i, action.value)
+
+
+async def music_control_response(i, action):
+    acknowledged = await bot.music.acknowledge(i, '## Music controls\nApplying your music control…')
     async def status(message):
-        await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
+        if acknowledged:
+            try:
+                await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException as error:
+                logging.warning('Music control response rejected: HTTP %s, code %s.', error.status, error.code)
     try:
-        await status(await asyncio.wait_for(bot.music.control(i, action.value), timeout=20))
+        await status(await asyncio.wait_for(bot.music.control(i, action), timeout=20))
     except asyncio.TimeoutError:
         await status('The voice action timed out. Check voice permissions and host connectivity, then try again.')
     except MusicError as error:
         await status(str(error))
+
+
+@bot.tree.command(description='Join your current voice channel, self-deafened, without starting music.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+async def joinvc(i: discord.Interaction):
+    await music_control_response(i, 'join')
+
+
+@bot.tree.command(description='Leave voice and stop any music or pending playback.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+async def leave(i: discord.Interaction):
+    await music_control_response(i, 'leave')
 
 
 @bot.tree.command(description='Review Vynex Tweaks or Premium with a rating out of five stars.')
