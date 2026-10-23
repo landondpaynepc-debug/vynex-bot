@@ -96,6 +96,7 @@ class Bot(discord.Client):
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
+        logging.info('Registered commands for this instance: %s', ', '.join(command.name for command in synced))
         logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
 
     async def on_ready(self):
@@ -204,16 +205,6 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
     except Exception as error:
         logging.exception('Music request %s failed.', i.id)
         await progress(f'Music could not start ({type(error).__name__}). Reference: {i.id}. Check the matching Render error.')
-
-
-@bot.tree.command(description='Join voice, control playback, view the queue, or leave.')
-@app_commands.guild_only()
-@app_commands.check(server_only)
-@app_commands.choices(action=[app_commands.Choice(name=name, value=value) for name, value in [
-    ('Join my voice channel', 'join'), ('Pause', 'pause'), ('Resume', 'resume'), ('Skip', 'skip'),
-    ('Show queue', 'queue'), ('Stop and clear queue', 'stop'), ('Leave voice', 'leave')]])
-async def music(i: discord.Interaction, action: app_commands.Choice[str]):
-    await music_control_response(i, action.value)
 
 
 async def music_control_response(i, action):
@@ -456,7 +447,7 @@ async def clear(i: discord.Interaction, amount: app_commands.Range[int, 1, 100])
 @bot.tree.error
 async def error_handler(i: discord.Interaction, error: app_commands.AppCommandError):
     original = getattr(error, 'original', error)
-    command = getattr(getattr(i, 'command', None), 'name', 'unknown')
+    command = getattr(getattr(i, 'command', None), 'name', None) or (getattr(i, 'data', None) or {}).get('name', 'unknown')
     reference = getattr(i, 'id', 'unknown')
     logging.error('Command /%s failed: %s; HTTP=%s code=%s; reference=%s', command,
         type(original).__name__, getattr(original, 'status', '-'), getattr(original, 'code', '-'), reference)
@@ -472,6 +463,9 @@ async def error_handler(i: discord.Interaction, error: app_commands.AppCommandEr
         message = 'Discord could not find that member, ban, or message.'
     elif isinstance(original, app_commands.CommandSignatureMismatch):
         message = 'Discord has an outdated command definition. Reload Discord and choose the command again after the latest bot deployment finishes.'
+    elif isinstance(original, app_commands.CommandNotFound):
+        version = os.getenv('RENDER_GIT_COMMIT', 'unknown')[:7]
+        message = f'This bot instance has not loaded /{command}. Running build: {version}. Wait for the latest deployment to finish, then reload Discord.'
     elif isinstance(original, discord.HTTPException):
         message = f'Discord rejected /{command} (HTTP {original.status}, code {original.code}). Reference: {reference}.'
     elif isinstance(original, RuntimeError):

@@ -122,10 +122,17 @@ def extract(query):
         options['js_runtimes'] = {'node': {'path': node}}
     with yt_dlp.YoutubeDL(options) as extractor:
         info = extractor.extract_info(query, download=False)
-    if 'entries' in info:
-        info = next((entry for entry in info['entries'] if entry), None)
-    if not info or not info.get('url') or info.get('is_live'):
-        raise MusicError('No playable track was found. Live streams are not supported.')
+        if info and 'entries' in info:
+            info = next((entry for entry in info['entries'] if entry), None)
+            if info is None and query.startswith('ytsearch1:'):
+                fallback = extractor.extract_info(query + ' official audio', download=False)
+                info = next((entry for entry in (fallback or {}).get('entries', []) if entry), None)
+    if not info:
+        raise MusicError('YouTube returned no matching results. Add the artist name or paste a direct YouTube track link.')
+    if info.get('is_live'):
+        raise MusicError('That result is a live stream. Choose a recorded track or paste its direct YouTube link.')
+    if not info.get('url'):
+        raise MusicError('This track has no accessible audio stream. It may be restricted or unavailable; try a different recording.')
     duration = info.get('duration')
     if duration and duration > 7200:
         raise MusicError('Choose a track shorter than two hours.')
@@ -366,7 +373,7 @@ class MusicManager:
                 self.idle = asyncio.create_task(self.idle_disconnect())
             return 'Joined your voice channel, self-deafened.'
         if action not in ('stop', 'leave') and (not voice or not voice.is_connected()):
-            raise MusicError('The bot is not connected. Use /play or /music join.')
+            raise MusicError('The bot is not connected. Use /play or /joinvc.')
         if action == 'queue':
             title = self.current['title'] if self.current else 'Nothing'
             return '**Now playing:** ' + discord.utils.escape_markdown(title) + '\n' + (

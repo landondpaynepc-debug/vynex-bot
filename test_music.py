@@ -31,6 +31,23 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_song_search_retries_with_audio_qualifier(self):
+        from music import extract
+        extractor = MagicMock()
+        extractor.extract_info.side_effect = [dict(entries=[]), dict(entries=[
+            dict(title='NLE Choppa - Slut Me Out', url='https://audio.example/track', duration=180)])]
+        with patch('yt_dlp.YoutubeDL') as factory:
+            factory.return_value.__enter__.return_value = extractor
+            track = extract('ytsearch1:slut me out')
+        self.assertIn('Slut Me Out', track['title'])
+        self.assertEqual(extractor.extract_info.call_args.args[0], 'ytsearch1:slut me out official audio')
+
+    async def test_missing_results_are_not_reported_as_live_streams(self):
+        from music import extract
+        with patch('yt_dlp.YoutubeDL') as factory:
+            factory.return_value.__enter__.return_value.extract_info.return_value = dict(entries=[])
+            with self.assertRaisesRegex(MusicError, 'no matching results'):
+                extract('ytsearch1:unknown track')
     async def test_rate_limited_ack_does_not_raise_or_repeat_requests(self):
         f = fixture()
         request = NS(response=NS(send_message=AsyncMock(side_effect=discord.HTTPException(
@@ -193,10 +210,10 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
         tree = app_commands.CommandTree(client)
         async def check(i): return True
         scope = dict(discord=discord, app_commands=app_commands, bot=NS(tree=tree), server_only=check)
-        for name in ('play', 'music', 'joinvc', 'leave'):
+        for name in ('play', 'joinvc', 'leave'):
             command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
             exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-command-test', 'exec'), scope)
-        self.assertEqual(len(tree.get_command('music').to_dict(tree)['options'][0]['choices']), 7)
+        self.assertIsNone(tree.get_command('music'))
         request = NS()
         scope['music_control_response'] = AsyncMock()
         await tree.get_command('joinvc').callback(request)
