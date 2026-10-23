@@ -52,6 +52,46 @@ def fixture():
 
 
 class CommunityEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_production_errors_identify_http_code_and_command(self):
+        source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
+        handler = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'error_handler')
+        handler.decorator_list = []
+        reply = AsyncMock()
+        scope = dict(discord=discord, app_commands=app_commands, VynexError=type('VynexError', (Exception,), {}),
+                     logging=NS(error=MagicMock()), reply=reply)
+        exec(compile(ast.Module(body=[handler], type_ignores=[]), 'error-handler-test', 'exec'), scope)
+        request = NS(id=1234, command=NS(name='review'))
+        error = discord.HTTPException(NS(status=400, reason='Bad Request'), {'code':50035, 'message':'Invalid form'})
+        await scope['error_handler'](request, NS(original=error))
+        message = reply.call_args.args[1]
+        for expected in ('review', '400', '50035', '1234'):
+            self.assertIn(expected, message)
+
+    async def test_complete_review_and_giveaway_callbacks(self):
+        source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
+        f = fixture()
+        client = discord.Client(intents=discord.Intents.none())
+        tree = app_commands.CommandTree(client)
+        async def check(i): return True
+        replies = AsyncMock()
+        scope = dict(discord=discord, app_commands=app_commands,
+            bot=NS(tree=tree, giveaways=f.manager), server_only=check,
+            reply=replies, review_view=review_view, duration_seconds=duration_seconds)
+        for name in ('review', 'giveaway'):
+            command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
+            exec(compile(ast.Module(body=[command], type_ignores=[]), 'full-command-test', 'exec'), scope)
+        request = NS(user=NS(id=42), response=NS(send_message=AsyncMock(), defer=AsyncMock()),
+                     followup=NS(send=AsyncMock()))
+        for package in (None, app_commands.Choice(name='VYNEX Premium Package', value='VYNEX Premium Package')):
+            await tree.get_command('review').callback(request, 5, 'Great tweaks!', package)
+        self.assertEqual(request.response.defer.await_count, 2)
+        self.assertEqual(request.followup.send.await_count, 2)
+        f.request.response = NS(defer=AsyncMock())
+        await tree.get_command('giveaway').callback(f.request, 'Premium key', '2h', 'Enter to win!')
+        f.registry.send.assert_awaited_once()
+        replies.assert_awaited_once()
+        await client.close()
+
     async def test_duration_and_star_display(self):
         self.assertEqual(duration_seconds('2h'), 7200)
         for invalid in ('0m', '31d', '-1h', 'tomorrow', '1s'):

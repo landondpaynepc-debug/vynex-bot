@@ -82,6 +82,7 @@ class Bot(discord.Client):
             await super().close()
 
     async def setup_hook(self):
+        logging.info('Community commands diagnostic build 2; discord.py %s.', discord.__version__)
         port = await self.health_server.start()
         logging.info('Render health server listening on 0.0.0.0:%s', port)
         self.tickets.register_views()
@@ -183,8 +184,9 @@ async def shop(i: discord.Interaction):
                               app_commands.Choice(name='VYNEX Premium Package', value='VYNEX Premium Package')])
 async def review(i: discord.Interaction, stars: app_commands.Range[int, 1, 5],
                  text: app_commands.Range[str, 1, 1500], package: app_commands.Choice[str] = None):
+    await i.response.defer()
     application = package.value if package else 'Vynex Tweaks'
-    await i.response.send_message(view=review_view(i.user, stars, application, text),
+    await i.followup.send(view=review_view(i.user, stars, application, text),
                                   allowed_mentions=discord.AllowedMentions.none())
 
 
@@ -384,6 +386,10 @@ async def clear(i: discord.Interaction, amount: app_commands.Range[int, 1, 100])
 @bot.tree.error
 async def error_handler(i: discord.Interaction, error: app_commands.AppCommandError):
     original = getattr(error, 'original', error)
+    command = getattr(getattr(i, 'command', None), 'name', 'unknown')
+    reference = getattr(i, 'id', 'unknown')
+    logging.error('Command /%s failed: %s; HTTP=%s code=%s; reference=%s', command,
+        type(original).__name__, getattr(original, 'status', '-'), getattr(original, 'code', '-'), reference)
     if isinstance(original, VynexError):
         message = str(original)
     elif isinstance(original, app_commands.CommandOnCooldown):
@@ -394,9 +400,15 @@ async def error_handler(i: discord.Interaction, error: app_commands.AppCommandEr
         message = 'Discord refused this action. Check the bot’s permissions and role position.'
     elif isinstance(original, discord.NotFound):
         message = 'Discord could not find that member, ban, or message.'
+    elif isinstance(original, app_commands.CommandSignatureMismatch):
+        message = 'Discord has an outdated command definition. Reload Discord and choose the command again after the latest bot deployment finishes.'
+    elif isinstance(original, discord.HTTPException):
+        message = f'Discord rejected /{command} (HTTP {original.status}, code {original.code}). Reference: {reference}.'
+    elif isinstance(original, RuntimeError):
+        message = f'/{command} could not run: {original}'
     else:
         logging.error('Command failed', exc_info=(type(original), original, original.__traceback__))
-        message = 'The command failed. Check the bot console for details.'
+        message = f'/{command} failed ({type(original).__name__}). Reference: {reference}. Send staff the Render error for this reference.'
     await reply(i, message)
 
 
