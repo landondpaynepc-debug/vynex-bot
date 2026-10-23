@@ -66,6 +66,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
                     'DashboardManager':FakeTickets,
                     'WelcomeManager':FakeTickets,
                     'GiveawayManager':FakeGiveaways,
+                    'MusicManager':FakeGiveaways,
                     'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()

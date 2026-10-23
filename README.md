@@ -52,6 +52,14 @@ Use `/health` as the Render health-check path. `/` also reports liveness. `/read
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
 
+## Voice music
+
+Join a normal voice channel and use `/play query:song name and artist`, `/play query:https://www.youtube.com/watch?v=...`, or an individual public Spotify track link. The bot joins the caller's voice channel **self-deafened** and plays/queues the track. Spotify links are resolved through Spotify's public oEmbed metadata and matched to a YouTube audio source; they do not stream Spotify audio or connect a personal Spotify account. Spotify albums/playlists are not supported. Source availability and matches can vary; use a specific YouTube link to select the recording. No Spotify credentials are required.
+
+`/music action:` provides Join, Pause, Resume, Skip, Show queue, Stop and clear queue, and Leave voice. Controls require the member to be in the same voice channel as the bot. Connect and Speak permissions are required. Queues support up to 50 pending tracks, reject live streams and tracks longer than two hours, and exist only while the process runs. The bot disconnects after three idle minutes. Responses and now-playing messages use dark gray Components V2.
+
+The Render build command remains `pip install -r requirements.txt`. The voice extra installs PyNaCl and DAVE; `imageio-ffmpeg` provides an FFmpeg binary without requiring a system package install. `yt-dlp[default]` handles source extraction; when Node is available it is used for YouTube's JavaScript challenges. Some YouTube sources restrict bot/datacenter playback; try another track if a source refuses access. The host must support outbound Discord voice UDP traffic. Live Discord playback must be verified after deployment by joining voice and running `/play`; dependency, metadata, extraction, and actual local Opus encoding are tested separately.
+
 ## Reviews and giveaways
 
 `/review stars:5 text:Your review package:Vynex Tweaks` posts a public Components V2 review in the current channel. Any server member can use it, with a five-minute cooldown. Ratings are constrained to 1–5, displayed with filled/empty stars, the username and user ID, review text and selected app (Tweaks by default; Premium is also available). User mentions in reviews cannot ping anyone.

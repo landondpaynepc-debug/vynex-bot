@@ -15,6 +15,7 @@ from dashboard import DashboardManager
 from welcome import WelcomeManager
 from ui_messages import send_text
 from community_events import GiveawayManager, review_view, duration_seconds
+from music import MusicManager, MusicError
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -73,10 +74,12 @@ class Bot(discord.Client):
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
         self.welcome = WelcomeManager(self, GUILD_ID)
         self.giveaways = GiveawayManager(self, GUILD_ID)
+        self.music = MusicManager(self, GUILD_ID)
 
     async def close(self):
         try:
             await self.giveaways.close()
+            await self.music.close()
             await self.health_server.close()
         finally:
             await super().close()
@@ -174,6 +177,33 @@ async def shop(i: discord.Interaction):
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
+
+
+@bot.tree.command(description='Join your voice channel and play a song name, YouTube link or Spotify track link.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.checks.cooldown(1, 5)
+async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
+    await i.response.defer(ephemeral=True)
+    try:
+        track = await bot.music.play(i, query)
+        await reply(i, f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
+    except MusicError as error:
+        await reply(i, str(error))
+
+
+@bot.tree.command(description='Join voice, control playback, view the queue, or leave.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.choices(action=[app_commands.Choice(name=name, value=value) for name, value in [
+    ('Join my voice channel', 'join'), ('Pause', 'pause'), ('Resume', 'resume'), ('Skip', 'skip'),
+    ('Show queue', 'queue'), ('Stop and clear queue', 'stop'), ('Leave voice', 'leave')]])
+async def music(i: discord.Interaction, action: app_commands.Choice[str]):
+    await i.response.defer(ephemeral=True)
+    try:
+        await reply(i, await bot.music.control(i, action.value))
+    except MusicError as error:
+        await reply(i, str(error))
 
 
 @bot.tree.command(description='Review Vynex Tweaks or Premium with a rating out of five stars.')
