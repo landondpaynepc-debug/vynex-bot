@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 from discord import app_commands
-from music import MusicManager, MusicError, source_query
+from music import MusicManager, MusicError, MusicPanel, PrimedAudio, source_query
 
 
 def fixture():
@@ -31,6 +31,54 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_controls_do_not_wait_for_loading_lock(self):
+        f = fixture()
+        f.voice.is_playing.return_value = True
+        await f.manager.lock.acquire()
+        try:
+            result = await asyncio.wait_for(f.manager.control(f.request, 'pause'), timeout=0.2)
+            self.assertIn('paused', result)
+            await asyncio.wait_for(f.manager.control(f.request, 'stop'), timeout=0.2)
+            f.voice.stop.assert_called_once()
+        finally:
+            f.manager.lock.release()
+            await f.manager.close()
+
+    async def test_empty_audio_is_rejected_before_playback(self):
+        f = fixture()
+        f.manager.resolve = AsyncMock(return_value=dict(title='Blocked', url='https://audio.example/stream',
+            webpage='https://youtube.com/watch?v=test', spotify=None))
+        with patch('discord.FFmpegOpusAudio') as source:
+            source.return_value.read.return_value = b''
+            with self.assertRaisesRegex(MusicError, 'returned no sound'):
+                await f.manager.play(f.request, 'Song')
+            f.voice.play.assert_not_called()
+            source.return_value.cleanup.assert_called_once()
+        await f.manager.close()
+
+    async def test_vc_chat_panel_has_all_buttons_and_is_reused(self):
+        f = fixture()
+        f.manager.text_channel = f.channel
+        message = NS(channel=f.channel, edit=AsyncMock())
+        f.channel.send = AsyncMock(return_value=message)
+        await f.manager.publish_controls('Now playing')
+        await f.manager.publish_controls('Paused')
+        f.channel.send.assert_awaited_once()
+        message.edit.assert_awaited_once()
+        panel = MusicPanel(f.manager)
+        self.assertTrue(panel.is_persistent())
+        container = panel.to_components()[0]
+        self.assertEqual([button['label'] for row in container['components'] if row['type']==1
+                          for button in row['components']], ['Pause', 'Resume', 'Skip', 'Queue', 'Stop', 'Leave'])
+
+    async def test_verified_first_packet_is_preserved(self):
+        original = NS(read=MagicMock(return_value=b'next'), cleanup=MagicMock())
+        source = PrimedAudio(original, b'first')
+        self.assertTrue(source.is_opus())
+        self.assertEqual(source.read(), b'first')
+        self.assertEqual(source.read(), b'next')
+        source.cleanup()
+        original.cleanup.assert_called_once()
     async def test_play_replaces_thinking_and_reports_timeout(self):
         source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
         command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'play')
@@ -42,10 +90,11 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
             bot=NS(tree=tree, music=NS(play=AsyncMock(side_effect=asyncio.TimeoutError))),
             server_only=check, text_view=text_view, MusicError=MusicError, logging=MagicMock())
         exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-timeout-test', 'exec'), scope)
-        request = NS(id=123, response=NS(defer=AsyncMock()), edit_original_response=AsyncMock())
+        request = NS(id=123, response=NS(send_message=AsyncMock()), edit_original_response=AsyncMock())
         await tree.get_command('play').callback(request, 'test song')
-        self.assertEqual(request.edit_original_response.await_count, 2)
-        first, last = request.edit_original_response.call_args_list
+        self.assertEqual(request.edit_original_response.await_count, 1)
+        first = request.response.send_message.call_args
+        last = request.edit_original_response.call_args
         self.assertIn('Searching', first.kwargs['view'].to_components()[0]['components'][0]['content'])
         self.assertIn('timed out', last.kwargs['view'].to_components()[0]['components'][0]['content'])
         await client.close()
@@ -86,7 +135,7 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(f.channel.connect.call_args.kwargs['self_deaf'])
         f.guild.voice_client = f.voice
         await f.manager.connect(f.request)
-        f.guild.change_voice_state.assert_awaited_once_with(channel=f.channel, self_deaf=True)
+        f.guild.change_voice_state.assert_awaited_once_with(channel=f.channel, self_deaf=True, self_mute=False)
 
     async def test_no_voice_wrong_voice_and_missing_permissions(self):
         f = fixture()

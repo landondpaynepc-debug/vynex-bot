@@ -10,11 +10,66 @@ from urllib.parse import urlsplit
 import aiohttp
 import discord
 
-from ui_messages import send_text
+from ui_messages import send_text, text_view, TICKET_COLOR
 
 
 class MusicError(RuntimeError):
     pass
+
+
+class PrimedAudio(discord.AudioSource):
+    """Keep the verified first Opus packet for the voice player's first read."""
+    def __init__(self, source, first_packet):
+        self.source, self.first_packet = source, first_packet
+
+    def read(self):
+        if self.first_packet is not None:
+            packet, self.first_packet = self.first_packet, None
+            return packet
+        return self.source.read()
+
+    def is_opus(self):
+        return True
+
+    def cleanup(self):
+        self.source.cleanup()
+
+
+class MusicButton(discord.ui.Button):
+    def __init__(self, manager, label, action):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, custom_id=f'vynex:music:{action}:v1')
+        self.manager, self.action = manager, action
+
+    async def callback(self, interaction):
+        await interaction.response.send_message(view=text_view('Applying music control…'), ephemeral=True,
+                                                allowed_mentions=discord.AllowedMentions.none())
+        succeeded = False
+        try:
+            result = await asyncio.wait_for(self.manager.control(interaction, self.action), timeout=20)
+            succeeded = True
+        except MusicError as error:
+            result = str(error)
+        except asyncio.TimeoutError:
+            result = 'The voice action timed out. Try again or check the bot’s voice connection.'
+        except Exception as error:
+            logging.exception('Music control button failed.')
+            result = f'Music control failed ({type(error).__name__}). Check the Render error.'
+        await interaction.edit_original_response(view=text_view(result), allowed_mentions=discord.AllowedMentions.none())
+        if succeeded and self.manager.text_channel:
+            with suppress(discord.HTTPException, asyncio.TimeoutError):
+                title = self.manager.current['title'] if self.manager.current else 'Nothing'
+                await asyncio.wait_for(self.manager.publish_controls(
+                    f'## Music controls\n{result}\n\n**Current track:** {discord.utils.escape_markdown(title)}'), timeout=3)
+
+
+class MusicPanel(discord.ui.LayoutView):
+    def __init__(self, manager, text='## Music controls\nUse the buttons below while you are in this voice channel.'):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Container(discord.ui.TextDisplay(text), discord.ui.Separator(visible=False),
+            discord.ui.ActionRow(*(MusicButton(manager, label, action) for label, action in
+                [('Pause', 'pause'), ('Resume', 'resume'), ('Skip', 'skip'), ('Queue', 'queue')])),
+            discord.ui.ActionRow(MusicButton(manager, 'Stop', 'stop'), MusicButton(manager, 'Leave', 'leave')),
+            accent_colour=TICKET_COLOR))
 
 
 def source_query(value):
@@ -85,6 +140,21 @@ class MusicManager:
         self.idle = None
         self.text_channel = None
         self.generation = 0
+        self.last_playback_error = ''
+        self.control_message = None
+
+    def register_view(self):
+        self.bot.add_view(MusicPanel(self))
+
+    async def publish_controls(self, text):
+        view = MusicPanel(self, text)
+        if self.control_message and self.control_message.channel.id == self.text_channel.id:
+            try:
+                await self.control_message.edit(view=view, allowed_mentions=discord.AllowedMentions.none())
+                return
+            except discord.NotFound:
+                self.control_message = None
+        self.control_message = await self.text_channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
 
     def guild(self):
         return self.bot.get_guild(self.guild_id)
@@ -108,11 +178,11 @@ class MusicManager:
         voice = interaction.guild.voice_client
         try:
             if voice and voice.is_connected():
-                await asyncio.wait_for(interaction.guild.change_voice_state(channel=channel, self_deaf=True), timeout=8)
+                await asyncio.wait_for(interaction.guild.change_voice_state(channel=channel, self_deaf=True, self_mute=False), timeout=8)
                 return voice
             if voice:
                 await voice.disconnect(force=True)
-            return await asyncio.wait_for(channel.connect(self_deaf=True, timeout=12, reconnect=False), timeout=15)
+            return await asyncio.wait_for(channel.connect(self_deaf=True, self_mute=False, timeout=12, reconnect=False), timeout=15)
         except asyncio.CancelledError:
             partial = interaction.guild.voice_client
             if partial and not partial.is_connected():
@@ -160,28 +230,38 @@ class MusicManager:
 
     async def play(self, interaction, value, progress=None):
         self.require_channel(interaction)
+        generation = self.generation
         logging.info('Music stage: looking up track for guild %s.', self.guild_id)
         track = await self.resolve(value)
         async with self.lock:
+            if generation != self.generation:
+                raise MusicError('This play request was cancelled by Stop or Leave.')
             if len(self.pending) >= 50:
                 raise MusicError('The queue is full (50 tracks). Wait or skip a track.')
             if progress:
                 await progress('## Music\nTrack found. Connecting to your voice channel…')
             logging.info('Music stage: connecting to voice for guild %s.', self.guild_id)
             voice = await self.connect(interaction)
+            if generation != self.generation:
+                raise MusicError('This play request was cancelled by Stop or Leave.')
+            if getattr(getattr(interaction.guild.me, 'voice', None), 'mute', False):
+                raise MusicError('The bot is server-muted. Unmute it in Discord before playing music.')
             self.cancel_idle()
-            self.text_channel = interaction.channel
+            self.text_channel = self.require_channel(interaction)
             track['requester'] = interaction.user.id
             track['queued'] = self.current is not None
             # Store the source page and resolve its temporary audio URL again when it reaches the front.
             self.pending.append(track)
             if not voice.is_playing() and not voice.is_paused() and self.current is None:
+                if progress:
+                    await progress('## Music\nConnected. Checking the audio stream…')
                 await self.next_locked()
             if self.current is None and not self.pending:
-                raise MusicError('Playback could not start. Check the playback error shown in this channel.')
+                raise MusicError(self.last_playback_error or 'Playback could not start. Check the playback error shown in this channel.')
             return track
 
     async def next_locked(self):
+        generation = self.generation
         voice = self.guild().voice_client if self.guild() else None
         if not voice or not voice.is_connected():
             self.pending.clear()
@@ -195,9 +275,22 @@ class MusicManager:
                 if track.get('played_before') or track.get('queued'):
                     fresh = await self.resolve(track['webpage'])
                     track.update(url=fresh['url'])
+                if generation != self.generation:
+                    return
                 source = discord.FFmpegOpusAudio(track['url'], executable=imageio_ffmpeg.get_ffmpeg_exe(),
-                    before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                    before_options='-rw_timeout 10000000 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2',
                     options='-vn')
+                try:
+                    first_packet = await asyncio.wait_for(asyncio.to_thread(source.read), timeout=10)
+                    if not first_packet:
+                        raise MusicError('The audio source returned no sound. YouTube may be restricting this track on Render. Try another direct YouTube link.')
+                    if generation != self.generation:
+                        source.cleanup()
+                        return
+                except BaseException:
+                    source.cleanup()
+                    raise
+                source = PrimedAudio(source, first_packet)
                 self.current = track
                 token = self.generation
                 loop = asyncio.get_running_loop()
@@ -213,19 +306,21 @@ class MusicManager:
                 for queued in self.pending:
                     queued['queued'] = True
                 if self.text_channel:
-                    with suppress(discord.HTTPException):
-                        await send_text(self.text_channel.send,
+                    with suppress(discord.HTTPException, asyncio.TimeoutError):
+                        await asyncio.wait_for(self.publish_controls(
                             f'## Now playing\n**{discord.utils.escape_markdown(track["title"])}**\n'
                             f'Requested by <@{track["requester"]}>\n'
                             f'{"Spotify track matched to YouTube audio." if track["spotify"] else "YouTube audio."}\n'
-                            f'{track["webpage"]}')
+                            f'{track["webpage"]}'), timeout=4)
                 return
             except Exception as error:
                 logging.error('Track playback failed (%s).', type(error).__name__)
                 self.current = None
+                self.last_playback_error = (str(error) if isinstance(error, MusicError) else
+                    'Audio could not start. The source timed out or refused playback. Try another direct YouTube link.')
                 if self.text_channel:
-                    with suppress(discord.HTTPException):
-                        await send_text(self.text_channel.send, 'Unable to play that track. Check the music source and voice dependencies. Trying the next queued track.')
+                    with suppress(discord.HTTPException, asyncio.TimeoutError):
+                        await asyncio.wait_for(send_text(self.text_channel.send, self.last_playback_error), timeout=3)
         self.cancel_idle()
         self.idle = asyncio.create_task(self.idle_disconnect())
 
@@ -236,44 +331,48 @@ class MusicManager:
 
     async def control(self, interaction, action):
         self.require_channel(interaction)
-        async with self.lock:
-            voice = interaction.guild.voice_client
-            if action == 'join':
+        voice = interaction.guild.voice_client
+        if action == 'join':
+            async with self.lock:
                 await self.connect(interaction)
-                self.cancel_idle()
-                if not self.current:
-                    self.idle = asyncio.create_task(self.idle_disconnect())
-                return 'Joined your voice channel, self-deafened.'
-            if not voice or not voice.is_connected():
-                raise MusicError('The bot is not connected. Use /play or /music join.')
-            if action == 'queue':
-                title = self.current['title'] if self.current else 'Nothing'
-                return '**Now playing:** ' + discord.utils.escape_markdown(title) + '\n' + (
-                    '\n'.join(f'{index}. {discord.utils.escape_markdown(track["title"])}' for index, track in enumerate(list(self.pending)[:15], 1)) or 'The queue is empty.')
-            if action == 'pause':
-                if not voice.is_playing(): raise MusicError('Nothing is currently playing.')
-                voice.pause()
-                return 'Playback paused.'
-            if action == 'resume':
-                if not voice.is_paused(): raise MusicError('Playback is not paused.')
-                voice.resume()
-                return 'Playback resumed.'
-            if action == 'skip':
-                if not self.current: raise MusicError('Nothing is currently playing.')
+            self.text_channel = self.require_channel(interaction)
+            with suppress(discord.HTTPException, asyncio.TimeoutError):
+                await asyncio.wait_for(self.publish_controls('## Music controls\nConnected and self-deafened. Use /play to add a track.'), timeout=3)
+            self.cancel_idle()
+            if not self.current:
+                self.idle = asyncio.create_task(self.idle_disconnect())
+            return 'Joined your voice channel, self-deafened.'
+        if action not in ('stop', 'leave') and (not voice or not voice.is_connected()):
+            raise MusicError('The bot is not connected. Use /play or /music join.')
+        if action == 'queue':
+            title = self.current['title'] if self.current else 'Nothing'
+            return '**Now playing:** ' + discord.utils.escape_markdown(title) + '\n' + (
+                '\n'.join(f'{index}. {discord.utils.escape_markdown(track["title"])}' for index, track in enumerate(list(self.pending)[:15], 1)) or 'The queue is empty.')
+        if action == 'pause':
+            if not voice.is_playing(): raise MusicError('Nothing is currently playing.')
+            voice.pause()
+            return 'Playback paused.'
+        if action == 'resume':
+            if not voice.is_paused(): raise MusicError('Playback is not paused.')
+            voice.resume()
+            return 'Playback resumed.'
+        if action == 'skip':
+            if not self.current: raise MusicError('Nothing is currently playing.')
+            voice.stop()
+            return 'Skipped the current track.'
+        if action in ('stop', 'leave'):
+            self.generation += 1
+            self.pending.clear()
+            self.current = None
+            self.cancel_idle()
+            if voice:
                 voice.stop()
-                return 'Skipped the current track.'
-            if action in ('stop', 'leave'):
-                self.generation += 1
-                self.pending.clear()
-                self.current = None
-                self.cancel_idle()
-                voice.stop()
-                if action == 'leave':
-                    await voice.disconnect(force=True)
-                else:
-                    self.idle = asyncio.create_task(self.idle_disconnect())
-                return 'Stopped playback and cleared the queue.' if action == 'stop' else 'Left voice and cleared the queue.'
-            raise MusicError('Choose a supported music control.')
+            if action == 'leave' and voice:
+                await asyncio.wait_for(voice.disconnect(force=True), timeout=3)
+            elif action == 'stop':
+                self.idle = asyncio.create_task(self.idle_disconnect())
+            return 'Stopped playback and cleared the queue.' if action == 'stop' else 'Left voice and cleared the queue.'
+        raise MusicError('Choose a supported music control.')
 
     async def close(self):
         self.generation += 1

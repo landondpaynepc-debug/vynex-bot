@@ -92,6 +92,7 @@ class Bot(discord.Client):
         self.tickets.register_views()
         self.dashboard.register_view()
         self.giveaways.register_view()
+        self.music.register_view()
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
@@ -185,10 +186,10 @@ async def shop(i: discord.Interaction):
 @app_commands.check(server_only)
 @app_commands.checks.cooldown(1, 5)
 async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
-    await i.response.defer(ephemeral=True)
+    await i.response.send_message(view=text_view('## Music\nSearching for your track…'), ephemeral=True,
+                                  allowed_mentions=discord.AllowedMentions.none())
     async def progress(message):
         await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
-    await progress('## Music\nSearching for your track… This request will finish within 45 seconds.')
     try:
         track = await asyncio.wait_for(bot.music.play(i, query, progress=progress), timeout=45)
         await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
@@ -209,13 +210,16 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
     ('Join my voice channel', 'join'), ('Pause', 'pause'), ('Resume', 'resume'), ('Skip', 'skip'),
     ('Show queue', 'queue'), ('Stop and clear queue', 'stop'), ('Leave voice', 'leave')]])
 async def music(i: discord.Interaction, action: app_commands.Choice[str]):
-    await i.response.defer(ephemeral=True)
+    await i.response.send_message(view=text_view('## Music controls\nApplying your music control…'), ephemeral=True,
+                                  allowed_mentions=discord.AllowedMentions.none())
+    async def status(message):
+        await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
     try:
-        await reply(i, await asyncio.wait_for(bot.music.control(i, action.value), timeout=20))
+        await status(await asyncio.wait_for(bot.music.control(i, action.value), timeout=20))
     except asyncio.TimeoutError:
-        await reply(i, 'The voice action timed out. Check voice permissions and host connectivity, then try again.')
+        await status('The voice action timed out. Check voice permissions and host connectivity, then try again.')
     except MusicError as error:
-        await reply(i, str(error))
+        await status(str(error))
 
 
 @bot.tree.command(description='Review Vynex Tweaks or Premium with a rating out of five stars.')
