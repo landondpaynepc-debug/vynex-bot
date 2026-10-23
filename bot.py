@@ -1,5 +1,6 @@
 """Premium license issuing and Discord moderation. Python 3.10+."""
 import logging
+import asyncio
 import os
 from pathlib import Path
 import sqlite3
@@ -13,7 +14,7 @@ from rules import RulesManager
 from event_logs import EventLogs
 from dashboard import DashboardManager
 from welcome import WelcomeManager
-from ui_messages import send_text
+from ui_messages import send_text, text_view
 from community_events import GiveawayManager, review_view, duration_seconds
 from music import MusicManager, MusicError
 from discord import app_commands
@@ -185,11 +186,20 @@ async def shop(i: discord.Interaction):
 @app_commands.checks.cooldown(1, 5)
 async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
     await i.response.defer(ephemeral=True)
+    async def progress(message):
+        await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
+    await progress('## Music\nSearching for your track… This request will finish within 45 seconds.')
     try:
-        track = await bot.music.play(i, query)
-        await reply(i, f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
+        track = await asyncio.wait_for(bot.music.play(i, query, progress=progress), timeout=45)
+        await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
+    except asyncio.TimeoutError:
+        logging.error('Music request %s timed out after 45 seconds.', i.id)
+        await progress('## Music request timed out\nThe audio source or voice connection did not respond within 45 seconds. Try a direct YouTube link. If the bot cannot join voice, check Connect/Speak permissions and Render voice connectivity.')
     except MusicError as error:
-        await reply(i, str(error))
+        await progress(str(error))
+    except Exception as error:
+        logging.exception('Music request %s failed.', i.id)
+        await progress(f'Music could not start ({type(error).__name__}). Reference: {i.id}. Check the matching Render error.')
 
 
 @bot.tree.command(description='Join voice, control playback, view the queue, or leave.')
@@ -201,7 +211,9 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
 async def music(i: discord.Interaction, action: app_commands.Choice[str]):
     await i.response.defer(ephemeral=True)
     try:
-        await reply(i, await bot.music.control(i, action.value))
+        await reply(i, await asyncio.wait_for(bot.music.control(i, action.value), timeout=20))
+    except asyncio.TimeoutError:
+        await reply(i, 'The voice action timed out. Check voice permissions and host connectivity, then try again.')
     except MusicError as error:
         await reply(i, str(error))
 

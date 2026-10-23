@@ -31,6 +31,32 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_play_replaces_thinking_and_reports_timeout(self):
+        source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
+        command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == 'play')
+        client = discord.Client(intents=discord.Intents.none())
+        tree = app_commands.CommandTree(client)
+        async def check(i): return True
+        from ui_messages import text_view
+        scope = dict(discord=discord, asyncio=asyncio, app_commands=app_commands,
+            bot=NS(tree=tree, music=NS(play=AsyncMock(side_effect=asyncio.TimeoutError))),
+            server_only=check, text_view=text_view, MusicError=MusicError, logging=MagicMock())
+        exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-timeout-test', 'exec'), scope)
+        request = NS(id=123, response=NS(defer=AsyncMock()), edit_original_response=AsyncMock())
+        await tree.get_command('play').callback(request, 'test song')
+        self.assertEqual(request.edit_original_response.await_count, 2)
+        first, last = request.edit_original_response.call_args_list
+        self.assertIn('Searching', first.kwargs['view'].to_components()[0]['components'][0]['content'])
+        self.assertIn('timed out', last.kwargs['view'].to_components()[0]['components'][0]['content'])
+        await client.close()
+
+    async def test_voice_connection_timeout_is_actionable(self):
+        f = fixture()
+        f.guild.voice_client = None
+        f.channel.connect.side_effect = asyncio.TimeoutError
+        with self.assertRaisesRegex(MusicError, 'Voice connection failed'):
+            await f.manager.connect(f.request)
+
     async def test_real_ffmpeg_encodes_non_opus_audio(self):
         import imageio_ffmpeg
         executable = imageio_ffmpeg.get_ffmpeg_exe()

@@ -108,12 +108,22 @@ class MusicManager:
         voice = interaction.guild.voice_client
         try:
             if voice and voice.is_connected():
-                await interaction.guild.change_voice_state(channel=channel, self_deaf=True)
+                await asyncio.wait_for(interaction.guild.change_voice_state(channel=channel, self_deaf=True), timeout=8)
                 return voice
             if voice:
                 await voice.disconnect(force=True)
-            return await channel.connect(self_deaf=True, timeout=25, reconnect=True)
+            return await asyncio.wait_for(channel.connect(self_deaf=True, timeout=12, reconnect=False), timeout=15)
+        except asyncio.CancelledError:
+            partial = interaction.guild.voice_client
+            if partial and not partial.is_connected():
+                with suppress(Exception):
+                    await asyncio.wait_for(partial.disconnect(force=True), timeout=3)
+            raise
         except (discord.DiscordException, RuntimeError, asyncio.TimeoutError) as error:
+            partial = interaction.guild.voice_client
+            if partial and not partial.is_connected():
+                with suppress(Exception):
+                    await asyncio.wait_for(partial.disconnect(force=True), timeout=3)
             logging.error('Voice connection failed (%s).', type(error).__name__)
             raise MusicError('Voice connection failed. Check Connect/Speak permissions, voice dependencies, and host UDP access.') from error
 
@@ -139,7 +149,7 @@ class MusicManager:
                 raise MusicError('Spotify lookup is unavailable. Try the song title and artist instead.') from error
         try:
             track = await asyncio.wait_for(asyncio.to_thread(extract,
-                query if kind == 'youtube' else f'ytsearch1:{query}'), timeout=45)
+                query if kind == 'youtube' else f'ytsearch1:{query}'), timeout=25)
         except MusicError:
             raise
         except Exception as error:
@@ -148,12 +158,16 @@ class MusicManager:
         track['spotify'] = spotify
         return track
 
-    async def play(self, interaction, value):
+    async def play(self, interaction, value, progress=None):
         self.require_channel(interaction)
+        logging.info('Music stage: looking up track for guild %s.', self.guild_id)
         track = await self.resolve(value)
         async with self.lock:
             if len(self.pending) >= 50:
                 raise MusicError('The queue is full (50 tracks). Wait or skip a track.')
+            if progress:
+                await progress('## Music\nTrack found. Connecting to your voice channel…')
+            logging.info('Music stage: connecting to voice for guild %s.', self.guild_id)
             voice = await self.connect(interaction)
             self.cancel_idle()
             self.text_channel = interaction.channel
