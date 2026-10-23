@@ -14,6 +14,7 @@ from event_logs import EventLogs
 from dashboard import DashboardManager
 from welcome import WelcomeManager
 from ui_messages import send_text
+from community_events import GiveawayManager, review_view, duration_seconds
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -71,9 +72,11 @@ class Bot(discord.Client):
         self.event_logs = EventLogs(self, GUILD_ID)
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
         self.welcome = WelcomeManager(self, GUILD_ID)
+        self.giveaways = GiveawayManager(self, GUILD_ID)
 
     async def close(self):
         try:
+            await self.giveaways.close()
             await self.health_server.close()
         finally:
             await super().close()
@@ -83,12 +86,14 @@ class Bot(discord.Client):
         logging.info('Render health server listening on 0.0.0.0:%s', port)
         self.tickets.register_views()
         self.dashboard.register_view()
+        self.giveaways.register_view()
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
         logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
 
     async def on_ready(self):
+        self.giveaways.start()
         for name, refresh in (('shop panel', self.tickets.ensure_panel),
                               ('open ticket messages', self.tickets.refresh_open_tickets),
                               ('community rules', self.rules.ensure_rules),
@@ -168,6 +173,35 @@ async def shop(i: discord.Interaction):
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
+
+
+@bot.tree.command(description='Review Vynex Tweaks or Premium with a rating out of five stars.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.checks.cooldown(1, 300)
+@app_commands.choices(package=[app_commands.Choice(name='Vynex Tweaks', value='Vynex Tweaks'),
+                              app_commands.Choice(name='VYNEX Premium Package', value='VYNEX Premium Package')])
+async def review(i: discord.Interaction, stars: app_commands.Range[int, 1, 5],
+                 text: app_commands.Range[str, 1, 1500], package: app_commands.Choice[str] = None):
+    application = package.value if package else 'Vynex Tweaks'
+    await i.response.send_message(view=review_view(i.user, stars, application, text),
+                                  allowed_mentions=discord.AllowedMentions.none())
+
+
+@bot.tree.command(description='Start a giveaway with a prize, custom text and duration (10m, 2h, 7d).')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(manage_guild=True)
+async def giveaway(i: discord.Interaction, prize: app_commands.Range[str, 1, 200],
+                   duration: str, text: app_commands.Range[str, 1, 1600]):
+    try:
+        seconds = duration_seconds(duration)
+    except ValueError as error:
+        return await reply(i, str(error))
+    await i.response.defer(ephemeral=True)
+    message = await bot.giveaways.create(i, prize, text, seconds)
+    await reply(i, f'Giveaway started: {message.jump_url}')
 
 
 @bot.tree.command(description='Send a welcome preview to the configured welcome channel.')

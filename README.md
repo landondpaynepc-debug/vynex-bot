@@ -52,6 +52,14 @@ Use `/health` as the Render health-check path. `/` also reports liveness. `/read
 
 Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
 
+## Reviews and giveaways
+
+`/review stars:5 text:Your review package:Vynex Tweaks` posts a public Components V2 review in the current channel. Any server member can use it, with a five-minute cooldown. Ratings are constrained to 1–5, displayed with filled/empty stars, the username and user ID, review text and selected app (Tweaks by default; Premium is also available). User mentions in reviews cannot ping anyone.
+
+`/giveaway prize:Premium access duration:2h text:Your custom announcement` is restricted to members with Manage Server. It posts a public dark gray Components V2 card in the current channel with an Enter Giveaway button, host, entry count and Discord end-time timestamps. Durations accept `m`, `h`, or `d`, from 1 minute to 30 days. One entry per server member; bot accounts and late entries are rejected. The scheduler checks every 15 seconds and selects one random entrant, displays the winner's username/mention and disables entry when it ends. A giveaway with no entries ends without a winner.
+
+Giveaway recovery records and entry lists are stored as JSON attachments on bot-owned messages in staff logs channel `1550300376853520434`. Give the bot View Channel, Read Message History, Send Messages and Attach Files there, and keep these records intact. They survive Render restarts and deployments without relying on Render's temporary disk. On recovery, overdue giveaways finish; a saved winner is never redrawn after an announcement retry. The bot must be running to announce results. Members can keep using entry buttons after a restart. The giveaway channel needs View Channel, Send Messages and Read Message History for the bot.
+
 ## Welcome messages and shared styling
 
 New joins automatically receive role `1542769773882908743` in the configured server. Give the bot **Manage Roles** and place its highest role above this role. The role must not be managed by an integration. Startup validates this configuration. Existing member roles are preserved; a role-assignment failure is logged and does not prevent the welcome message. Welcome previews do not assign roles, and existing members are not backfilled on restart.

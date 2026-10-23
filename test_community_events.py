@@ -1,0 +1,136 @@
+import ast
+import asyncio
+import json
+from pathlib import Path
+from types import SimpleNamespace as NS
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
+from discord import app_commands
+
+from community_events import (GiveawayManager, GiveawayView, STATE_FILE,
+                              duration_seconds, review_view)
+from ui_messages import TICKET_COLOR
+
+
+async def stream(values):
+    for value in values:
+        yield value
+
+
+def fixture():
+    records = []
+    public = MagicMock(spec=discord.TextChannel)
+    public.guild = NS(id=10)
+    message = NS(id=555, jump_url='https://discord.com/channels/10/20/555',
+                 edit=AsyncMock(), delete=AsyncMock())
+    public.send = AsyncMock(return_value=message)
+    public.fetch_message = AsyncMock(return_value=message)
+    registry = MagicMock(spec=discord.TextChannel)
+    registry.guild = NS(id=10)
+    registry.history = lambda **kw: stream(records)
+    async def save(**kw):
+        data = kw['file'].fp.read()
+        attachment = NS(filename=STATE_FILE, read=AsyncMock(return_value=data))
+        record = NS(id=888, author=NS(id=99), attachments=[attachment])
+        async def edit(**payload):
+            attachment.read.return_value = payload['attachments'][0].fp.read()
+        record.edit = AsyncMock(side_effect=edit)
+        records.append(record)
+        return record
+    registry.send = AsyncMock(side_effect=save)
+    from event_logs import LOG_CHANNEL_ID
+    bot = NS(user=NS(id=99), get_channel=lambda ident: registry if ident == LOG_CHANNEL_ID else public)
+    manager = GiveawayManager(bot, 10)
+    request = NS(channel=public, channel_id=20, user=NS(id=42), guild_id=10)
+    def entry(user=42):
+        return NS(guild_id=10, message=message, user=NS(id=user, bot=False),
+            response=NS(defer=AsyncMock(), send_message=AsyncMock()), followup=NS(send=AsyncMock()))
+    return NS(manager=manager, bot=bot, request=request, entry=entry,
+              message=message, registry=registry, records=records)
+
+
+class CommunityEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_duration_and_star_display(self):
+        self.assertEqual(duration_seconds('2h'), 7200)
+        for invalid in ('0m', '31d', '-1h', 'tomorrow', '1s'):
+            with self.assertRaises(ValueError): duration_seconds(invalid)
+        for stars in range(1, 6):
+            root = review_view(NS(id=42), stars, 'Vynex Tweaks', 'Great tweaks').to_components()[0]
+            self.assertEqual(root['type'], 17)
+            self.assertEqual(root['accent_color'], TICKET_COLOR)
+            text = root['components'][0]['content']
+            self.assertIn('★' * stars + '☆' * (5-stars), text)
+            self.assertIn(f'{stars}/5', text)
+            self.assertIn('42', text)
+
+    async def test_commands_register_rating_bounds_and_staff_only_giveaway(self):
+        source = ast.parse(Path(__file__).with_name('bot.py').read_text(encoding='utf-8'))
+        client = discord.Client(intents=discord.Intents.none())
+        tree = app_commands.CommandTree(client)
+        async def check(i): return True
+        scope = dict(discord=discord, app_commands=app_commands, bot=NS(tree=tree), server_only=check)
+        for name in ('review', 'giveaway'):
+            command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
+            exec(compile(ast.Module(body=[command], type_ignores=[]), 'command-test', 'exec'), scope)
+        option = tree.get_command('review').to_dict(tree)['options'][0]
+        self.assertEqual((option['min_value'], option['max_value']), (1, 5))
+        self.assertTrue(tree.get_command('giveaway').default_permissions.manage_guild)
+        await client.close()
+
+    async def test_duplicate_entries_and_restart_recovery(self):
+        f = fixture()
+        with patch('community_events.time.time', return_value=10):
+            await f.manager.create(f.request, 'Premium access', 'Custom giveaway text', 60)
+            await asyncio.gather(f.manager.enter(f.entry()), f.manager.enter(f.entry()), f.manager.enter(f.entry(43)))
+        self.assertEqual(len(f.manager.states[555][0]['entries']), 2)
+        restored = GiveawayManager(f.bot, 10)
+        await restored.load()
+        self.assertEqual(set(restored.states[555][0]['entries']), {'42', '43'})
+        self.assertTrue(GiveawayView(restored, restored.states[555][0]).is_persistent())
+        with patch('community_events.time.time', return_value=100), patch('community_events.secrets.choice', return_value='43') as choose:
+            await restored.tick()
+            choose.assert_called_once()
+        saved = json.loads(await f.records[0].attachments[0].read())
+        self.assertEqual(saved['winner'], '43')
+        self.assertTrue(saved['ended'])
+        root = f.message.edit.call_args.kwargs['view'].to_components()[0]
+        self.assertIn('<@43>', root['components'][0]['content'])
+        self.assertTrue(root['components'][-1]['components'][0]['disabled'])
+        self.assertFalse(restored.states)
+
+    async def test_empty_giveaway_and_deadline_reject_entry(self):
+        f = fixture()
+        with patch('community_events.time.time', return_value=10):
+            await f.manager.create(f.request, 'Prize', 'Text', 60)
+        with patch('community_events.time.time', return_value=100), patch('community_events.secrets.choice') as choose:
+            await f.manager.enter(f.entry())
+            await f.manager.tick()
+            choose.assert_not_called()
+        root = f.message.edit.call_args.kwargs['view'].to_components()[0]
+        self.assertIn('Nobody entered', root['components'][0]['content'])
+
+    async def test_result_is_not_redrawn_after_announcement_failure(self):
+        f = fixture()
+        with patch('community_events.time.time', return_value=10):
+            await f.manager.create(f.request, 'Prize', 'Text', 60)
+            await f.manager.enter(f.entry())
+        f.message.edit.side_effect = discord.HTTPException(NS(status=500, reason='Test'), 'simulated')
+        with patch('community_events.time.time', return_value=100), patch('community_events.secrets.choice', return_value='42'):
+            await f.manager.tick()
+        restored = GiveawayManager(f.bot, 10)
+        await restored.load()
+        self.assertEqual(restored.states[555][0]['winner'], '42')
+        f.message.edit.side_effect = None
+        with patch('community_events.secrets.choice') as choose:
+            await restored.tick()
+            choose.assert_not_called()
+
+    async def test_storage_failure_does_not_confirm_entry(self):
+        f = fixture()
+        with patch('community_events.time.time', return_value=10):
+            await f.manager.create(f.request, 'Prize', 'Text', 60)
+            f.records[0].edit.side_effect = RuntimeError('Storage unavailable')
+            await f.manager.enter(f.entry())
+        self.assertEqual(f.manager.states[555][0]['entries'], {})
