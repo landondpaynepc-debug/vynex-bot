@@ -17,6 +17,7 @@ from welcome import WelcomeManager
 from ui_messages import send_text, text_view
 from community_events import GiveawayManager, review_view, duration_seconds
 from music import MusicManager, MusicError
+from spotify_client import SpotifyClient, SpotifyError, SpotifyPanel
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -76,6 +77,7 @@ class Bot(discord.Client):
         self.welcome = WelcomeManager(self, GUILD_ID)
         self.giveaways = GiveawayManager(self, GUILD_ID)
         self.music = MusicManager(self, GUILD_ID)
+        self.spotify = SpotifyClient(vynex.base_url, vynex.password)
 
     async def close(self):
         try:
@@ -221,6 +223,24 @@ async def music_control_response(i, action):
         await status('The voice action timed out. Check voice permissions and host connectivity, then try again.')
     except MusicError as error:
         await status(str(error))
+
+
+@bot.tree.command(description='Link your Spotify account and control playback on your own Spotify devices.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.checks.cooldown(1, 3)
+@app_commands.choices(action=[app_commands.Choice(name=name, value=value) for name, value in [
+    ('Link account', 'link'), ('Now playing', 'status'), ('Devices', 'devices'), ('Resume', 'play'),
+    ('Pause', 'pause'), ('Next', 'next'), ('Previous', 'previous'), ('Select device', 'device'), ('Unlink account', 'unlink')]])
+async def spotify(i: discord.Interaction, action: app_commands.Choice[str], device: app_commands.Range[str, 1, 128] = None):
+    await i.response.send_message(view=text_view('Contacting Spotify…'), ephemeral=True,
+                                  allowed_mentions=discord.AllowedMentions.none())
+    try:
+        data = await bot.spotify.request(i.user.id, action.value, device)
+        view = SpotifyPanel(bot.spotify, i.user.id, action.value, data)
+    except SpotifyError as error:
+        view = text_view(str(error))
+    await i.edit_original_response(view=view, allowed_mentions=discord.AllowedMentions.none())
 
 
 @bot.tree.command(description='Join your current voice channel, self-deafened, without starting music.')

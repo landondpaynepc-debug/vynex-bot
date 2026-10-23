@@ -119,3 +119,10 @@ The panel is posted automatically after a successful Render deployment. The HTTP
 New tickets notify only the opener and staff role `1542769771844599878` using explicit allowed-mention lists; everyone and other roles cannot be pinged by that message. Discord requires the staff role to be mentionable or the bot to have permission to mention non-mentionable roles for a notification to fire.
 
 Ticket panels, welcome messages, confirmations and archives retain boxed Components V2 containers with a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
+
+
+## Link a personal Spotify account
+
+`/spotify action:Link account` opens a private Components V2 panel with a Spotify sign-in button. After Spotify consent, use Now playing, Devices, Resume, Pause, Next, Previous, Select device, or Unlink account. The panel includes private playback buttons. Each command uses only the invoking member's Discord ID; another member cannot use that member's panel. Commands control playback on the member's own Spotify devices and do not broadcast Spotify audio into voice.
+
+The public Vynex API must deploy `spotify_account.py` and configure `SPOTIFY_CLIENT_ID`. Register `https://vynex-api.onrender.com/spotify/callback` as the app's redirect URI. PKCE is used, so no client secret is needed. Bot environment settings remain the existing API URL and administrator password. Spotify Premium and a permitted Developer app are required; development-mode apps currently permit up to five authorized users. Open Spotify on a phone or computer and start a track before using playback controls. A missing Client ID reports incomplete setup rather than pretending the account is linked.

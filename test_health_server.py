@@ -69,6 +69,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
                     'WelcomeManager':FakeTickets,
                     'GiveawayManager':FakeGiveaways,
                     'MusicManager':FakeMusic,
+                    'SpotifyClient':FakeTickets, 'vynex':SimpleNamespace(base_url='https://example.invalid', password='offline'),
                     'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()
