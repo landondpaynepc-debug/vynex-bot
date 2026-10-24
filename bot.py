@@ -1,6 +1,5 @@
 """Premium license issuing and Discord moderation. Python 3.10+."""
 import logging
-import asyncio
 import os
 from pathlib import Path
 import sqlite3
@@ -16,8 +15,6 @@ from dashboard import DashboardManager
 from welcome import WelcomeManager
 from ui_messages import send_text, text_view
 from community_events import GiveawayManager, review_view, duration_seconds
-from music import MusicManager, MusicError
-from spotify_client import SpotifyClient, SpotifyError, SpotifyPanel
 from discord import app_commands
 from dotenv import load_dotenv
 
@@ -76,13 +73,10 @@ class Bot(discord.Client):
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
         self.welcome = WelcomeManager(self, GUILD_ID)
         self.giveaways = GiveawayManager(self, GUILD_ID)
-        self.music = MusicManager(self, GUILD_ID)
-        self.spotify = SpotifyClient(vynex.base_url, vynex.password)
 
     async def close(self):
         try:
             await self.giveaways.close()
-            await self.music.close()
             await self.health_server.close()
         finally:
             await super().close()
@@ -94,7 +88,6 @@ class Bot(discord.Client):
         self.tickets.register_views()
         self.dashboard.register_view()
         self.giveaways.register_view()
-        self.music.register_view()
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
@@ -109,12 +102,29 @@ class Bot(discord.Client):
                               ('event logs', self.event_logs.check),
                               ('community dashboard', self.dashboard.ensure_dashboard),
                               ('welcome channel', self.welcome.check),
-                              ('automatic member role', self.welcome.check_auto_role)):
+                              ('automatic member role', self.welcome.check_auto_role),
+                              ('retired music panels', self.retire_music_panels)):
             try:
                 await refresh()
                 logging.info('Dark gray Components V2 %s refreshed.', name)
             except (discord.HTTPException, RuntimeError) as error:
                 logging.error('%s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
+
+    async def retire_music_panels(self):
+        guild = self.get_guild(GUILD_ID)
+        if guild is None:
+            return
+        def retired(nodes):
+            return any(str(node.get('custom_id', '')).startswith('vynex:music:')
+                       or retired(node.get('components', [])) for node in nodes)
+        for channel in guild.voice_channels:
+            try:
+                async for message in channel.history(limit=100):
+                    if message.author.id == self.user.id and retired([c.to_dict() for c in message.components]):
+                        await message.edit(view=text_view('Music features have been removed.'),
+                                           allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                logging.warning('Could not retire old music controls in voice channel %s.', channel.id)
 
     async def on_raw_message_delete(self, payload):
         await self.event_logs.deleted(payload)
@@ -182,80 +192,6 @@ async def shop(i: discord.Interaction):
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
-
-
-@bot.tree.command(description='Play an uploaded MP3 or a song request for everyone in your voice channel.')
-@app_commands.guild_only()
-@app_commands.check(server_only)
-@app_commands.checks.cooldown(1, 5)
-async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300] | None = None,
-               file: discord.Attachment | None = None):
-    acknowledged = await bot.music.acknowledge(i, '## Music\nLoading your MP3…' if file else '## Music\nSearching for your track…')
-    async def progress(message):
-        if acknowledged:
-            try:
-                await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException as error:
-                logging.warning('Music progress response rejected: HTTP %s, code %s.', error.status, error.code)
-    try:
-        track = await asyncio.wait_for(bot.music.play(i, query, progress=progress, attachment=file), timeout=45)
-        await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
-    except asyncio.TimeoutError:
-        logging.error('Music request %s timed out after 45 seconds.', i.id)
-        await progress('## Music request timed out\nThe audio source or voice connection did not respond within 45 seconds. Try a public SoundCloud track link. If the bot cannot join voice, check Connect/Speak permissions and Render voice connectivity.')
-    except MusicError as error:
-        await progress(str(error))
-    except Exception as error:
-        logging.exception('Music request %s failed.', i.id)
-        await progress(f'Music could not start ({type(error).__name__}). Reference: {i.id}. Check the matching Render error.')
-
-
-async def music_control_response(i, action):
-    acknowledged = await bot.music.acknowledge(i, '## Music controls\nApplying your music control…')
-    async def status(message):
-        if acknowledged:
-            try:
-                await i.edit_original_response(view=text_view(message), allowed_mentions=discord.AllowedMentions.none())
-            except discord.HTTPException as error:
-                logging.warning('Music control response rejected: HTTP %s, code %s.', error.status, error.code)
-    try:
-        await status(await asyncio.wait_for(bot.music.control(i, action), timeout=20))
-    except asyncio.TimeoutError:
-        await status('The voice action timed out. Check voice permissions and host connectivity, then try again.')
-    except MusicError as error:
-        await status(str(error))
-
-
-@bot.tree.command(description='Link your Spotify account and control playback on your own Spotify devices.')
-@app_commands.guild_only()
-@app_commands.check(server_only)
-@app_commands.checks.cooldown(1, 3)
-@app_commands.choices(action=[app_commands.Choice(name=name, value=value) for name, value in [
-    ('Link account', 'link'), ('Now playing', 'status'), ('Devices', 'devices'), ('Resume', 'play'),
-    ('Pause', 'pause'), ('Next', 'next'), ('Previous', 'previous'), ('Select device', 'device'), ('Unlink account', 'unlink')]])
-async def spotify(i: discord.Interaction, action: app_commands.Choice[str], device: app_commands.Range[str, 1, 128] = None):
-    await i.response.send_message(view=text_view('Contacting Spotify…'), ephemeral=True,
-                                  allowed_mentions=discord.AllowedMentions.none())
-    try:
-        data = await bot.spotify.request(i.user.id, action.value, device)
-        view = SpotifyPanel(bot.spotify, i.user.id, action.value, data)
-    except SpotifyError as error:
-        view = text_view(str(error))
-    await i.edit_original_response(view=view, allowed_mentions=discord.AllowedMentions.none())
-
-
-@bot.tree.command(description='Join your current voice channel, self-deafened, without starting music.')
-@app_commands.guild_only()
-@app_commands.check(server_only)
-async def joinvc(i: discord.Interaction):
-    await music_control_response(i, 'join')
-
-
-@bot.tree.command(description='Leave voice and stop any music or pending playback.')
-@app_commands.guild_only()
-@app_commands.check(server_only)
-async def leave(i: discord.Interaction):
-    await music_control_response(i, 'leave')
 
 
 @bot.tree.command(description='Review Vynex Tweaks or Premium with a rating out of five stars.')

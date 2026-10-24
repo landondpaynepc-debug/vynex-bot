@@ -50,23 +50,7 @@ Keep the existing start command `python bot.py` and build command `pip install -
 
 Use `/health` as the Render health-check path. `/` also reports liveness. `/ready` returns 200 only while Discord is ready, otherwise 503. Responses contain no credentials or user data. Shutdown closes the HTTP listener along with the Discord client.
 
-Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Voice-support warnings about PyNaCl or davey are unrelated to this bot's key and moderation commands.
-
-## Voice music
-
-To play your own audio for everyone in voice, join a voice channel and use `/play file:` to upload an MP3. Leave `query` empty. Files must be non-empty MP3 uploads up to 50 MB (Discord's own upload limit may be lower). Choose exactly one of `query` and `file`. Uploaded files use Discord's CDN directly, load to a temporary local file, and play through the existing queue and VC control panel without searching Spotify or SoundCloud. Files are removed after playback, failure or cancellation. Queued upload links can expire; reattach the file if Discord refuses it.
-
-`/joinvc` joins the requesting member's voice channel self-deafened without starting a track. `/leave` stops music, cancels pending playback, clears the queue and disconnects. Both require the member to be in the same voice channel when the bot is connected. The `/music` slash command has been removed; use the VC chat buttons for playback controls.
-
-If Discord returns HTTP 429 for an interaction acknowledgement, the bot pauses further music response requests for the server's Retry-After interval (at least 60 seconds) and still attempts the requested voice action. This avoids preventing Leave/Stop just because Discord refused the text response. Cloudflare 1015 is a Discord-side rate limit; code cannot remove it, and repeated command attempts can prolong it. Logs contain the status rather than dumping the HTML error page.
-
-The bot posts a reusable dark gray Components V2 control panel directly in the voice channel's text chat, with **Pause, Resume, Skip, Queue, Stop, Leave** buttons. Join the same voice channel to use them; The `/music` command is removed. The bot needs Send Messages in that voice channel's chat. Public controls persist across restarts, but playback queues do not. Music commands immediately send a status card rather than leaving a thinking indicator; controls do not wait for the track-loading lock. Stop cancels pending play requests. Before reporting Now Playing, the bot verifies an actual first Opus audio packet and preserves it for playback. Empty or blocked audio streams produce an explicit error, and server-muted bots are detected.
-
-Join a normal voice channel and use `/play query:song name and artist` or a public `https://soundcloud.com/artist/track` link. Playback searches up to five SoundCloud results and skips unavailable or preview-only results. The bot joins self-deafened and plays for everyone in the voice channel. Spotify track links are accepted as metadata requests and matched to SoundCloud recordings; the actual audio source is labeled in the control panel. YouTube remains removed. `/spotify` controls personal Spotify devices.
-
-The VC chat panel provides Pause, Resume, Skip, Show queue, Stop and Leave. Controls require the member to be in the same voice channel as the bot. Connect and Speak permissions are required. Queues support up to 50 pending tracks, reject live streams and tracks longer than two hours, and exist only while the process runs. The bot disconnects after three idle minutes. Responses and now-playing messages use dark gray Components V2.
-
-The Render build remains `pip install -r requirements.txt`. Voice dependencies provide PyNaCl, DAVE and FFmpeg; yt-dlp resolves SoundCloud audio. Private, protected and subscription-only recordings cannot play. Audio is first loaded to a temporary local file with the native HTTP/HLS downloader, bounded to 25 seconds and 50 MB. FFmpeg decodes only local files to avoid the observed Render network-decoder crash. Temporary files are cleaned on completion, errors and cancellation. The host must support outbound Discord voice UDP. Live Discord audio must be verified by a member in voice after deployment.
+Deploy the latest commit and look for `Render health server listening on 0.0.0.0:` followed by the package-selector command-sync message. Music and Spotify commands have been removed.
 
 ## Reviews and giveaways
 
@@ -123,11 +107,3 @@ New tickets notify only the opener and staff role `1542769771844599878` using ex
 Ticket panels, welcome messages, confirmations and archives retain boxed Components V2 containers with a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
 
 
-## Link a personal Spotify account
-
-Giveaway entry buttons reload missing recovery records after rolling deployments. An orphaned, bot-owned active panel with zero entries can recreate its record on the next entry without changing its deadline. Panels showing existing entries are never reset; missing records are reported as unavailable rather than falsely ended. Keep giveaway recovery attachments in the staff logs channel.
-
-
-`/spotify action:Link account` opens a private Components V2 panel with a Spotify sign-in button. After Spotify consent, use Now playing, Devices, Resume, Pause, Next, Previous, Select device, or Unlink account. The panel includes private playback buttons. Each command uses only the invoking member's Discord ID; another member cannot use that member's panel. Commands control playback on the member's own Spotify devices and do not broadcast Spotify audio into voice.
-
-The public Vynex API must deploy `spotify_account.py` and configure `SPOTIFY_CLIENT_ID`. Register `https://vynex-api.onrender.com/spotify/callback` as the app's redirect URI. PKCE is used, so no client secret is needed. Bot environment settings remain the existing API URL and administrator password. Spotify Premium and a permitted Developer app are required; development-mode apps currently permit up to five authorized users. Open Spotify on a phone or computer and start a track before using playback controls. A missing Client ID reports incomplete setup rather than pretending the account is linked.
