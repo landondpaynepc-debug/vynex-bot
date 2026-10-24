@@ -1,14 +1,12 @@
-"""Self-deafened voice playback; Spotify links supply metadata, not audio."""
+"""Self-deafened SoundCloud voice playback."""
 import asyncio
 from collections import deque
 from contextlib import suppress
 import logging
 import re
-import shutil
 import time
 from urllib.parse import urlsplit
 
-import aiohttp
 import discord
 
 from ui_messages import send_text, text_view, TICKET_COLOR
@@ -77,10 +75,10 @@ class MusicPanel(discord.ui.LayoutView):
 def source_query(value):
     value = value.strip()
     if not value or len(value) > 300:
-        raise MusicError('Enter a song name, YouTube link or Spotify track link (up to 300 characters).')
+        raise MusicError('Enter a song name, SoundCloud track link (up to 300 characters).')
     if '://' not in value:
         if value.startswith(('spotify:', '//')):
-            raise MusicError('Paste an https://open.spotify.com/track/ link.')
+            raise MusicError('Use a song name or public SoundCloud track link.')
         return 'search', value
     url = urlsplit(value)
     try:
@@ -88,51 +86,33 @@ def source_query(value):
     except ValueError as error:
         raise MusicError('That link contains an invalid port.') from error
     if url.scheme != 'https' or url.username or url.password or port not in (None, 443):
-        raise MusicError('Use an HTTPS YouTube or Spotify track link.')
+        raise MusicError('Use an HTTPS SoundCloud track link.')
     host = (url.hostname or '').lower()
-    if host == 'open.spotify.com':
-        match = re.fullmatch(r'/(?:intl-[a-z]{2}/)?track/([A-Za-z0-9]{22})/?', url.path)
-        if not match:
-            raise MusicError('Spotify support currently accepts individual track links. Albums and playlists are not supported.')
-        return 'spotify', f'https://open.spotify.com/track/{match[1]}'
-    if host in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'www.youtu.be'):
-        return 'youtube', value
-    raise MusicError('Use a song name, a YouTube link, or a Spotify track link.')
+    if host in ('soundcloud.com', 'www.soundcloud.com'):
+        if not re.fullmatch(r'/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/?', url.path) or url.path.startswith('/discover/'):
+            raise MusicError('Paste an individual SoundCloud track link, or enter the song and artist.')
+        return 'soundcloud', 'https://soundcloud.com' + url.path
+    raise MusicError('Use a song name or a SoundCloud track link. YouTube playback has been removed. Use /spotify for your personal Spotify device.')
 
-
-async def spotify_title(url):
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-        async with session.get('https://open.spotify.com/oembed', params={'url': url}) as response:
-            if response.status != 200:
-                raise MusicError('Spotify could not read this track. Try a public track link or enter the song and artist.')
-            data = await response.json()
-    title = data.get('title')
-    if not isinstance(title, str) or not title.strip():
-        raise MusicError('Spotify returned no track title. Enter the song and artist instead.')
-    return title[:300]
 
 
 def extract(query):
     import yt_dlp
     options = dict(format='bestaudio/best', quiet=True, no_warnings=True, noplaylist=True,
                    socket_timeout=15, retries=1, extractor_retries=1, cachedir=False,
-                   skip_download=True)
-    node = shutil.which('node')
-    if node:
-        options['js_runtimes'] = {'node': {'path': node}}
+                   skip_download=True, lazy_playlist=True, ignoreerrors=query.startswith('scsearch'))
     with yt_dlp.YoutubeDL(options) as extractor:
         info = extractor.extract_info(query, download=False)
         if info and 'entries' in info:
-            info = next((entry for entry in info['entries'] if entry), None)
-            if info is None and query.startswith('ytsearch1:'):
-                fallback = extractor.extract_info(query + ' official audio', download=False)
-                info = next((entry for entry in (fallback or {}).get('entries', []) if entry), None)
+            info = next((entry for entry in info['entries'] if entry and entry.get('url') and not entry.get('is_preview') and entry.get('availability') not in ('premium_only', 'subscriber_only', 'needs_auth')), None)
     if not info:
-        raise MusicError('YouTube returned no matching results. Add the artist name or paste a direct YouTube track link.')
+        raise MusicError('SoundCloud returned no matching results that can play. Results may be protected, private or subscription-only. Add the artist name or paste a public playable SoundCloud track link.')
     if info.get('is_live'):
-        raise MusicError('That result is a live stream. Choose a recorded track or paste its direct YouTube link.')
+        raise MusicError('That result is a live stream. Choose a recorded track or paste its public SoundCloud track link.')
     if not info.get('url'):
         raise MusicError('This track has no accessible audio stream. It may be restricted or unavailable; try a different recording.')
+    if info.get('is_preview') or info.get('availability') in ('premium_only', 'subscriber_only', 'needs_auth'):
+        raise MusicError('This SoundCloud track requires a subscription or sign-in. Choose a public playable track.')
     duration = info.get('duration')
     if duration and duration > 7200:
         raise MusicError('Choose a track shorter than two hours.')
@@ -241,25 +221,15 @@ class MusicManager:
 
     async def resolve(self, value):
         kind, query = source_query(value)
-        spotify = query if kind == 'spotify' else None
-        if spotify:
-            try:
-                query = await spotify_title(query)
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
-                raise MusicError('Spotify lookup is unavailable. Try the song title and artist instead.') from error
         try:
             track = await asyncio.wait_for(asyncio.to_thread(extract,
-                query if kind == 'youtube' else f'ytsearch1:{query}'), timeout=25)
+                query if kind == 'soundcloud' else f'scsearch5:{query}'), timeout=25)
         except MusicError:
             raise
         except Exception as error:
-            logging.error('Music lookup failed (%s).', type(error).__name__)
-            if 'confirm you' in str(error).lower() and 'not a bot' in str(error).lower():
-                raise MusicError('YouTube is blocking audio requests from this Render server with a sign-in check. '
-                    'Discord voice playback is unavailable from this source right now. '
-                    'Use /spotify to control music on your own Spotify device; it does not broadcast into voice.') from error
-            raise MusicError('That track could not be loaded. Try another song or YouTube link; the source may restrict playback.') from error
-        track['spotify'] = spotify
+            logging.error('SoundCloud lookup failed (%s).', type(error).__name__)
+            raise MusicError('SoundCloud could not load that track. Try a public SoundCloud track link or add the artist name. Private, removed and subscription-only tracks cannot play.') from error
+        track['spotify'] = None
         return track
 
     async def play(self, interaction, value, progress=None):
@@ -317,7 +287,7 @@ class MusicManager:
                 try:
                     first_packet = await asyncio.wait_for(asyncio.to_thread(source.read), timeout=10)
                     if not first_packet:
-                        raise MusicError('The audio source returned no sound. YouTube may be restricting this track on Render. Try another direct YouTube link.')
+                        raise MusicError('The audio source returned no sound. Choose another public SoundCloud recording.')
                     if generation != self.generation:
                         source.cleanup()
                         return
@@ -344,7 +314,7 @@ class MusicManager:
                         await asyncio.wait_for(self.publish_controls(
                             f'## Now playing\n**{discord.utils.escape_markdown(track["title"])}**\n'
                             f'Requested by <@{track["requester"]}>\n'
-                            f'{"Spotify track matched to YouTube audio." if track["spotify"] else "YouTube audio."}\n'
+                            f'SoundCloud audio.\n'
                             f'{track["webpage"]}'), timeout=4)
                 return
             except Exception as error:

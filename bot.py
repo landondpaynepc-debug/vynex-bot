@@ -184,7 +184,7 @@ async def shop(i: discord.Interaction):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
-@bot.tree.command(description='Join your voice channel and play a song name, YouTube link or Spotify track link.')
+@bot.tree.command(description='Join your voice channel and play a song name or public SoundCloud track link.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
 @app_commands.checks.cooldown(1, 5)
@@ -201,7 +201,7 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
         await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
     except asyncio.TimeoutError:
         logging.error('Music request %s timed out after 45 seconds.', i.id)
-        await progress('## Music request timed out\nThe audio source or voice connection did not respond within 45 seconds. Try a direct YouTube link. If the bot cannot join voice, check Connect/Speak permissions and Render voice connectivity.')
+        await progress('## Music request timed out\nThe audio source or voice connection did not respond within 45 seconds. Try a public SoundCloud track link. If the bot cannot join voice, check Connect/Speak permissions and Render voice connectivity.')
     except MusicError as error:
         await progress(str(error))
     except Exception as error:

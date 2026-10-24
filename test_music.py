@@ -31,30 +31,25 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
-    async def test_host_signin_block_reports_cause_and_spotify_limit(self):
-        f = fixture()
-        with patch('music.extract', side_effect=Exception('Sign in to confirm you’re not a bot')):
-            with self.assertRaisesRegex(MusicError, 'Render server') as error:
-                await f.manager.resolve('a song')
-        self.assertIn('does not broadcast into voice', str(error.exception))
-
-    async def test_empty_song_search_retries_with_audio_qualifier(self):
-        from music import extract
-        extractor = MagicMock()
-        extractor.extract_info.side_effect = [dict(entries=[]), dict(entries=[
-            dict(title='NLE Choppa - Slut Me Out', url='https://audio.example/track', duration=180)])]
-        with patch('yt_dlp.YoutubeDL') as factory:
-            factory.return_value.__enter__.return_value = extractor
-            track = extract('ytsearch1:slut me out')
-        self.assertIn('Slut Me Out', track['title'])
-        self.assertEqual(extractor.extract_info.call_args.args[0], 'ytsearch1:slut me out official audio')
-
-    async def test_missing_results_are_not_reported_as_live_streams(self):
+    async def test_soundcloud_lookup_and_preview_rejection(self):
         from music import extract
         with patch('yt_dlp.YoutubeDL') as factory:
             factory.return_value.__enter__.return_value.extract_info.return_value = dict(entries=[])
             with self.assertRaisesRegex(MusicError, 'no matching results'):
-                extract('ytsearch1:unknown track')
+                extract('scsearch1:unknown')
+            factory.return_value.__enter__.return_value.extract_info.return_value = dict(url='https://audio.example/a', is_preview=True)
+            with self.assertRaisesRegex(MusicError, 'subscription'):
+                extract('https://soundcloud.com/artist/song')
+
+    async def test_search_skips_unavailable_and_preview_results(self):
+        from music import extract
+        with patch('yt_dlp.YoutubeDL') as factory:
+            factory.return_value.__enter__.return_value.extract_info.return_value = dict(entries=[
+                None, dict(url='https://audio.example/preview', is_preview=True),
+                dict(url='https://audio.example/private', availability='needs_auth'),
+                dict(title='Public track', url='https://audio.example/full', duration=180)])
+            self.assertEqual(extract('scsearch5:song')['title'], 'Public track')
+
     async def test_rate_limited_ack_does_not_raise_or_repeat_requests(self):
         f = fixture()
         request = NS(response=NS(send_message=AsyncMock(side_effect=discord.HTTPException(
@@ -158,8 +153,8 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
                 source.cleanup()
     async def test_sources_and_spotify_track_validation(self):
         self.assertEqual(source_query('song and artist'), ('search', 'song and artist'))
-        self.assertEqual(source_query('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=test')[0], 'spotify')
-        for invalid in ('http://youtube.com/watch?v=test', 'https://localhost/song',
+        self.assertEqual(source_query('https://soundcloud.com/artist/song')[0], 'soundcloud')
+        for invalid in ('https://youtube.com/watch?v=test', 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT', 'http://soundcloud.com/artist/song', 'https://localhost/song',
                         'https://open.spotify.com/playlist/123', 'https://youtube.com:bad/watch'):
             with self.assertRaises(MusicError): source_query(invalid)
 
@@ -183,14 +178,13 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
         f.channel.permissions_for.return_value.speak = False
         with self.assertRaises(MusicError): await f.manager.connect(f.request)
 
-    async def test_spotify_uses_metadata_search_and_never_spotify_audio(self):
+    async def test_song_search_uses_soundcloud_only(self):
         f = fixture()
-        with patch('music.spotify_title', new=AsyncMock(return_value='Song Artist')), patch('music.extract',
-                return_value=dict(title='Matched song', url='https://audio.example/stream', webpage='https://youtube.com/watch?v=test')) as extract:
-            track = await f.manager.resolve('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT')
-        extract.assert_called_once_with('ytsearch1:Song Artist')
-        self.assertIn('spotify.com', track['spotify'])
-        self.assertNotIn('spotify.com', track['url'])
+        with patch('music.extract', return_value=dict(title='Song', url='https://audio.example/stream', webpage='https://soundcloud.com/artist/song')) as extract:
+            await f.manager.resolve('Song Artist')
+            extract.assert_called_once_with('scsearch5:Song Artist')
+            await f.manager.resolve('https://soundcloud.com/artist/song')
+            self.assertEqual(extract.call_args.args[0], 'https://soundcloud.com/artist/song')
 
     async def test_play_queue_stop_and_callback_do_not_restart_stopped_music(self):
         f = fixture()
