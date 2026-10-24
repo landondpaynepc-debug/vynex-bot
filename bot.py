@@ -184,12 +184,13 @@ async def shop(i: discord.Interaction):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
-@bot.tree.command(description='Play a song request, SoundCloud track or Spotify track request in your voice channel.')
+@bot.tree.command(description='Play an uploaded MP3 or a song request for everyone in your voice channel.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
 @app_commands.checks.cooldown(1, 5)
-async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
-    acknowledged = await bot.music.acknowledge(i, '## Music\nSearching for your track…')
+async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300] | None = None,
+               file: discord.Attachment | None = None):
+    acknowledged = await bot.music.acknowledge(i, '## Music\nLoading your MP3…' if file else '## Music\nSearching for your track…')
     async def progress(message):
         if acknowledged:
             try:
@@ -197,7 +198,7 @@ async def play(i: discord.Interaction, query: app_commands.Range[str, 1, 300]):
             except discord.HTTPException as error:
                 logging.warning('Music progress response rejected: HTTP %s, code %s.', error.status, error.code)
     try:
-        track = await asyncio.wait_for(bot.music.play(i, query, progress=progress), timeout=45)
+        track = await asyncio.wait_for(bot.music.play(i, query, progress=progress, attachment=file), timeout=45)
         await progress(f'Added **{discord.utils.escape_markdown(track["title"])}** to playback. The bot is self-deafened.')
     except asyncio.TimeoutError:
         logging.error('Music request %s timed out after 45 seconds.', i.id)

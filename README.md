@@ -54,6 +54,8 @@ Deploy the latest commit and look for `Render health server listening on 0.0.0.0
 
 ## Voice music
 
+To play your own audio for everyone in voice, join a voice channel and use `/play file:` to upload an MP3. Leave `query` empty. Files must be non-empty MP3 uploads up to 50 MB (Discord's own upload limit may be lower). Choose exactly one of `query` and `file`. Uploaded files use Discord's CDN directly, load to a temporary local file, and play through the existing queue and VC control panel without searching Spotify or SoundCloud. Files are removed after playback, failure or cancellation. Queued upload links can expire; reattach the file if Discord refuses it.
+
 `/joinvc` joins the requesting member's voice channel self-deafened without starting a track. `/leave` stops music, cancels pending playback, clears the queue and disconnects. Both require the member to be in the same voice channel when the bot is connected. The `/music` slash command has been removed; use the VC chat buttons for playback controls.
 
 If Discord returns HTTP 429 for an interaction acknowledgement, the bot pauses further music response requests for the server's Retry-After interval (at least 60 seconds) and still attempts the requested voice action. This avoids preventing Leave/Stop just because Discord refused the text response. Cloudflare 1015 is a Discord-side rate limit; code cannot remove it, and repeated command attempts can prolong it. Logs contain the status rather than dumping the HTML error page.

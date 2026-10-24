@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 from discord import app_commands
-from music import MusicManager, MusicError, MusicPanel, PrimedAudio, source_query
+from music import MusicManager, MusicError, MusicPanel, PrimedAudio, source_query, attachment_track, download_attachment
 
 
 def fixture():
@@ -32,6 +32,56 @@ def fixture():
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mp3_upload_validation(self):
+        good = NS(filename='Song.MP3', size=500, url='https://cdn.discordapp.com/attachments/1/2/song.mp3')
+        self.assertEqual(attachment_track(good)['title'], 'Song.MP3')
+        for changes in (dict(filename='song.exe'), dict(size=0), dict(size=51*1024*1024),
+                        dict(url='https://localhost/song.mp3')):
+            with self.assertRaises(MusicError):
+                attachment_track(NS(**{**vars(good), **changes}))
+
+    async def test_uploaded_track_plays_and_queues_without_provider_lookup(self):
+        f = fixture()
+        f.manager.resolve = AsyncMock(side_effect=AssertionError('Uploads must not search providers'))
+        upload = NS(filename='song.mp3', size=500, url='https://cdn.discordapp.com/attachments/1/2/song.mp3')
+        with patch('discord.FFmpegOpusAudio') as decoder:
+            await f.manager.play(f.request, attachment=upload)
+            self.assertEqual(f.manager.current['title'], 'song.mp3')
+            f.voice.is_playing.return_value = True
+            await f.manager.play(f.request, attachment=upload)
+            f.voice.is_playing.return_value = False
+            await f.manager.next_locked()
+            self.assertEqual(decoder.call_count, 2)
+        f.manager.resolve.assert_not_awaited()
+        await f.manager.close()
+
+    async def test_request_requires_exactly_one_source(self):
+        f = fixture()
+        for query, upload in ((None, None), ('song', NS())):
+            with self.assertRaisesRegex(MusicError, 'either'):
+                await f.manager.play(f.request, query, attachment=upload)
+
+    async def test_upload_download_and_incomplete_file_cleanup(self):
+        upload = NS(filename='song.mp3', size=3, url='https://cdn.discordapp.com/attachments/1/2/song.mp3')
+        async def chunks(size):
+            yield b'abc'
+        response = MagicMock(status=200)
+        response.content.iter_chunked = chunks
+        response_context = MagicMock()
+        response_context.__aenter__ = AsyncMock(return_value=response)
+        session = MagicMock()
+        session.get.return_value = response_context
+        with patch('music.aiohttp.ClientSession') as factory:
+            factory.return_value.__aenter__ = AsyncMock(return_value=session)
+            path, resource = await download_attachment(upload)
+            self.assertEqual(Path(path).read_bytes(), b'abc')
+            resource.cleanup()
+            self.assertFalse(Path(path).exists())
+            session.get.assert_called_with(upload.url, allow_redirects=False)
+            upload.size = 5
+            with self.assertRaisesRegex(MusicError, 'incomplete'):
+                await download_attachment(upload)
+
     async def test_spotify_request_searches_soundcloud_and_labels_source(self):
         f = fixture()
         url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT'
@@ -245,6 +295,9 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
             command = next(n for n in source.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
             exec(compile(ast.Module(body=[command], type_ignores=[]), 'music-command-test', 'exec'), scope)
         self.assertIsNone(tree.get_command('music'))
+        options = tree.get_command('play').to_dict(tree)['options']
+        self.assertEqual({item['name']: item['type'] for item in options}, {'query':3, 'file':11})
+        self.assertTrue(all(not item.get('required', False) for item in options))
         request = NS()
         scope['music_control_response'] = AsyncMock()
         await tree.get_command('joinvc').callback(request)

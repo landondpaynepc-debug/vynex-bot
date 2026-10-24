@@ -19,6 +19,42 @@ class MusicError(RuntimeError):
     pass
 
 
+def attachment_track(attachment):
+    if Path(attachment.filename).suffix.lower() != '.mp3':
+        raise MusicError('Upload an MP3 file using the file option.')
+    if not 0 < attachment.size <= 50 * 1024 * 1024:
+        raise MusicError('The MP3 must be between 1 byte and 50 MB.')
+    url = urlsplit(attachment.url)
+    if url.scheme != 'https' or url.hostname not in ('cdn.discordapp.com', 'media.discordapp.net') or not url.path.startswith('/attachments/'):
+        raise MusicError('Use a file uploaded directly through Discord.')
+    return dict(title=attachment.filename, attachment=attachment, url=attachment.url,
+                webpage='', duration=None, spotify=None)
+
+
+async def download_attachment(attachment):
+    attachment_track(attachment)
+    resource = tempfile.TemporaryDirectory(prefix='vynex-upload-')
+    target = Path(resource.name) / 'audio.mp3'
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            async with session.get(attachment.url, allow_redirects=False) as response:
+                if response.status != 200:
+                    raise MusicError('Discord could not load this upload. Attach the MP3 again.')
+                size = 0
+                with target.open('wb') as output:
+                    async for chunk in response.content.iter_chunked(256 * 1024):
+                        size += len(chunk)
+                        if size > 50 * 1024 * 1024:
+                            raise MusicError('The MP3 exceeds the 50 MB limit.')
+                        output.write(chunk)
+        if size == 0 or size != attachment.size:
+            raise MusicError('The MP3 upload was incomplete. Attach it again.')
+        return str(target), resource
+    except BaseException:
+        resource.cleanup()
+        raise
+
+
 class PrimedAudio(discord.AudioSource):
     """Keep the verified first Opus packet for the voice player's first read."""
     def __init__(self, source, first_packet, resource=None):
@@ -289,6 +325,8 @@ class MusicManager:
         return track
 
     async def prepare(self, track):
+        if track.get('attachment') is not None:
+            return await download_attachment(track['attachment'])
         task = asyncio.create_task(asyncio.to_thread(download_audio, track))
         try:
             return await asyncio.shield(task)
@@ -299,11 +337,13 @@ class MusicManager:
             task.add_done_callback(discard)
             raise
 
-    async def play(self, interaction, value, progress=None):
+    async def play(self, interaction, value=None, progress=None, attachment=None):
         self.require_channel(interaction)
+        if bool(value and value.strip()) == (attachment is not None):
+            raise MusicError('Choose either a song query or an MP3 file, one per request.')
         generation = self.generation
         logging.info('Music stage: looking up track for guild %s.', self.guild_id)
-        track = await self.resolve(value)
+        track = attachment_track(attachment) if attachment is not None else await self.resolve(value)
         async with self.lock:
             if generation != self.generation:
                 raise MusicError('This play request was cancelled by Stop or Leave.')
@@ -343,7 +383,7 @@ class MusicManager:
             track = self.pending.popleft()
             try:
                 import imageio_ffmpeg
-                if track.get('played_before') or track.get('queued'):
+                if not track.get('attachment') and (track.get('played_before') or track.get('queued')):
                     fresh = await self.resolve(track['webpage'])
                     track.update(url=fresh['url'], download_info=fresh['download_info'])
                 if generation != self.generation:
@@ -390,7 +430,7 @@ class MusicManager:
                         await asyncio.wait_for(self.publish_controls(
                             f'## Now playing\n**{discord.utils.escape_markdown(track["title"])}**\n'
                             f'Requested by <@{track["requester"]}>\n'
-                            f'{"Spotify request matched to SoundCloud audio." if track.get("spotify") else "SoundCloud audio."}\n'
+                            f'{"Uploaded MP3." if track.get("attachment") else "Spotify request matched to SoundCloud audio." if track.get("spotify") else "SoundCloud audio."}\n'
                             f'{track["webpage"]}'), timeout=4)
                 return
             except Exception as error:
