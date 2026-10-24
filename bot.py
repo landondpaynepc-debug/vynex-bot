@@ -184,7 +184,7 @@ async def shop(i: discord.Interaction):
         await reply(i, 'Unable to publish the panel. Check the configured channels and bot permissions.')
 
 
-@bot.tree.command(description='Join your voice channel and play a song name or public SoundCloud track link.')
+@bot.tree.command(description='Play a song request, SoundCloud track or Spotify track request in your voice channel.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
 @app_commands.checks.cooldown(1, 5)

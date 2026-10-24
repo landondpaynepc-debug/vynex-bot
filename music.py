@@ -4,9 +4,12 @@ from collections import deque
 from contextlib import suppress
 import logging
 import re
+import tempfile
+from pathlib import Path
 import time
 from urllib.parse import urlsplit
 
+import aiohttp
 import discord
 
 from ui_messages import send_text, text_view, TICKET_COLOR
@@ -18,8 +21,9 @@ class MusicError(RuntimeError):
 
 class PrimedAudio(discord.AudioSource):
     """Keep the verified first Opus packet for the voice player's first read."""
-    def __init__(self, source, first_packet):
+    def __init__(self, source, first_packet, resource=None):
         self.source, self.first_packet = source, first_packet
+        self.resource = resource
 
     def read(self):
         if self.first_packet is not None:
@@ -31,7 +35,11 @@ class PrimedAudio(discord.AudioSource):
         return True
 
     def cleanup(self):
-        self.source.cleanup()
+        try:
+            self.source.cleanup()
+        finally:
+            if self.resource:
+                self.resource.cleanup()
 
 
 class MusicButton(discord.ui.Button):
@@ -75,7 +83,7 @@ class MusicPanel(discord.ui.LayoutView):
 def source_query(value):
     value = value.strip()
     if not value or len(value) > 300:
-        raise MusicError('Enter a song name, SoundCloud track link (up to 300 characters).')
+        raise MusicError('Enter a song name, SoundCloud track link or Spotify track link (up to 300 characters).')
     if '://' not in value:
         if value.startswith(('spotify:', '//')):
             raise MusicError('Use a song name or public SoundCloud track link.')
@@ -88,12 +96,57 @@ def source_query(value):
     if url.scheme != 'https' or url.username or url.password or port not in (None, 443):
         raise MusicError('Use an HTTPS SoundCloud track link.')
     host = (url.hostname or '').lower()
+    if host == 'open.spotify.com':
+        match = re.fullmatch(r'/(?:intl-[a-z]{2}/)?track/([A-Za-z0-9]{22})/?', url.path)
+        if not match:
+            raise MusicError('Use an individual Spotify track link, not an album or playlist.')
+        return 'spotify', f'https://open.spotify.com/track/{match[1]}'
     if host in ('soundcloud.com', 'www.soundcloud.com'):
         if not re.fullmatch(r'/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/?', url.path) or url.path.startswith('/discover/'):
             raise MusicError('Paste an individual SoundCloud track link, or enter the song and artist.')
         return 'soundcloud', 'https://soundcloud.com' + url.path
     raise MusicError('Use a song name or a SoundCloud track link. YouTube playback has been removed. Use /spotify for your personal Spotify device.')
 
+
+
+async def spotify_title(url):
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        async with session.get('https://open.spotify.com/oembed', params={'url': url}) as response:
+            if response.status != 200:
+                raise MusicError('Spotify could not read this track. Enter its song title and artist instead.')
+            title = (await response.json()).get('title')
+    if not isinstance(title, str) or not title.strip():
+        raise MusicError('Spotify returned no song title. Enter the song and artist instead.')
+    return title[:300]
+
+
+def download_audio(track):
+    """Download with native HTTP/HLS; FFmpeg only opens a local file."""
+    import yt_dlp
+    resource = tempfile.TemporaryDirectory(prefix='vynex-audio-')
+    deadline = time.monotonic() + 25
+    limit = 50 * 1024 * 1024
+    def check(status):
+        if time.monotonic() > deadline or status.get('downloaded_bytes', 0) > limit:
+            raise MusicError('Audio loading exceeded the 25-second or 50 MB limit. Choose a shorter recording.')
+    try:
+        info = dict(track['download_info'])
+        if (info.get('filesize') or 0) > limit:
+            raise MusicError('This recording is too large to load. Choose a shorter recording.')
+        with yt_dlp.YoutubeDL(dict(quiet=True, noprogress=True, no_warnings=True, noplaylist=True,
+                outtmpl=str(Path(resource.name) / 'audio.%(ext)s'), socket_timeout=8,
+                retries=0, fragment_retries=0, hls_prefer_native=True,
+                concurrent_fragment_downloads=2, max_filesize=limit,
+                progress_hooks=[check])) as downloader:
+            downloader.process_info(info)
+        files = [p for p in Path(resource.name).glob('audio.*')
+                 if p.suffix not in ('.part', '.ytdl', '.temp') and p.is_file()]
+        if len(files) != 1 or not 0 < files[0].stat().st_size <= limit:
+            raise MusicError('The recording could not be loaded completely. Try another public track.')
+        return str(files[0]), resource
+    except BaseException:
+        resource.cleanup()
+        raise
 
 
 def extract(query):
@@ -117,7 +170,7 @@ def extract(query):
     if duration and duration > 7200:
         raise MusicError('Choose a track shorter than two hours.')
     return dict(title=info.get('title', 'Unknown track'), url=info['url'],
-                webpage=info.get('webpage_url', ''), duration=duration)
+                webpage=info.get('webpage_url', ''), duration=duration, download_info=info)
 
 
 class MusicManager:
@@ -221,6 +274,9 @@ class MusicManager:
 
     async def resolve(self, value):
         kind, query = source_query(value)
+        spotify = query if kind == 'spotify' else None
+        if spotify:
+            query = await spotify_title(spotify)
         try:
             track = await asyncio.wait_for(asyncio.to_thread(extract,
                 query if kind == 'soundcloud' else f'scsearch5:{query}'), timeout=25)
@@ -229,8 +285,19 @@ class MusicManager:
         except Exception as error:
             logging.error('SoundCloud lookup failed (%s).', type(error).__name__)
             raise MusicError('SoundCloud could not load that track. Try a public SoundCloud track link or add the artist name. Private, removed and subscription-only tracks cannot play.') from error
-        track['spotify'] = None
+        track['spotify'] = spotify
         return track
+
+    async def prepare(self, track):
+        task = asyncio.create_task(asyncio.to_thread(download_audio, track))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            def discard(done):
+                if not done.cancelled() and done.exception() is None:
+                    done.result()[1].cleanup()
+            task.add_done_callback(discard)
+            raise
 
     async def play(self, interaction, value, progress=None):
         self.require_channel(interaction)
@@ -258,7 +325,7 @@ class MusicManager:
             self.pending.append(track)
             if not voice.is_playing() and not voice.is_paused() and self.current is None:
                 if progress:
-                    await progress('## Music\nConnected. Checking the audio stream…')
+                    await progress('## Music\nConnected. Loading audio for playback…')
                 await self.next_locked()
             if self.current is None and not self.pending:
                 raise MusicError(self.last_playback_error or 'Playback could not start. Check the playback error shown in this channel.')
@@ -278,23 +345,32 @@ class MusicManager:
                 import imageio_ffmpeg
                 if track.get('played_before') or track.get('queued'):
                     fresh = await self.resolve(track['webpage'])
-                    track.update(url=fresh['url'])
+                    track.update(url=fresh['url'], download_info=fresh['download_info'])
                 if generation != self.generation:
                     return
-                source = discord.FFmpegOpusAudio(track['url'], executable=imageio_ffmpeg.get_ffmpeg_exe(),
-                    before_options='-rw_timeout 10000000 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2',
-                    options='-vn')
+                logging.info('Music stage: loading local audio for guild %s.', self.guild_id)
+                local_path, resource = await self.prepare(track)
+                if generation != self.generation:
+                    resource.cleanup()
+                    return
+                try:
+                    source = discord.FFmpegOpusAudio(local_path, executable=imageio_ffmpeg.get_ffmpeg_exe(), options='-vn')
+                except BaseException:
+                    resource.cleanup()
+                    raise
                 try:
                     first_packet = await asyncio.wait_for(asyncio.to_thread(source.read), timeout=10)
                     if not first_packet:
                         raise MusicError('The audio source returned no sound. Choose another public SoundCloud recording.')
                     if generation != self.generation:
                         source.cleanup()
+                        resource.cleanup()
                         return
                 except BaseException:
                     source.cleanup()
+                    resource.cleanup()
                     raise
-                source = PrimedAudio(source, first_packet)
+                source = PrimedAudio(source, first_packet, resource)
                 self.current = track
                 token = self.generation
                 loop = asyncio.get_running_loop()
@@ -314,14 +390,14 @@ class MusicManager:
                         await asyncio.wait_for(self.publish_controls(
                             f'## Now playing\n**{discord.utils.escape_markdown(track["title"])}**\n'
                             f'Requested by <@{track["requester"]}>\n'
-                            f'SoundCloud audio.\n'
+                            f'{"Spotify request matched to SoundCloud audio." if track.get("spotify") else "SoundCloud audio."}\n'
                             f'{track["webpage"]}'), timeout=4)
                 return
             except Exception as error:
                 logging.error('Track playback failed (%s).', type(error).__name__)
                 self.current = None
                 self.last_playback_error = (str(error) if isinstance(error, MusicError) else
-                    'Audio could not start. The source timed out or refused playback. Try another direct YouTube link.')
+                    'Audio could not start. The source timed out or refused playback. Try another public SoundCloud track.')
                 if self.text_channel:
                     with suppress(discord.HTTPException, asyncio.TimeoutError):
                         await asyncio.wait_for(send_text(self.text_channel.send, self.last_playback_error), timeout=3)

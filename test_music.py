@@ -26,11 +26,39 @@ def fixture():
     guild = NS(id=10, me=NS(), voice_client=voice, change_voice_state=AsyncMock())
     bot = NS(get_guild=lambda ident: guild)
     manager = MusicManager(bot, 10)
+    manager.prepare = AsyncMock(return_value=('local-audio.mp3', NS(cleanup=MagicMock())))
     request = NS(guild=guild, guild_id=10, user=NS(id=42, voice=NS(channel=channel)), channel=NS(send=AsyncMock()))
     return NS(manager=manager, request=request, guild=guild, voice=voice, channel=channel)
 
 
 class MusicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_spotify_request_searches_soundcloud_and_labels_source(self):
+        f = fixture()
+        url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT'
+        with patch('music.spotify_title', new=AsyncMock(return_value='Song Artist')), patch('music.extract',
+                return_value=dict(title='Matched', url='https://audio.example/a')) as extract:
+            track = await f.manager.resolve(url)
+        extract.assert_called_once_with('scsearch5:Song Artist')
+        self.assertEqual(track['spotify'], url)
+
+    async def test_cancelled_loading_cleans_late_temporary_file(self):
+        f = fixture()
+        resource = NS(cleanup=MagicMock())
+        ready = asyncio.Event()
+        async def delayed(*args):
+            await ready.wait()
+            return 'local.mp3', resource
+        with patch('music.asyncio.to_thread', new=delayed):
+            task = asyncio.create_task(MusicManager.prepare(f.manager, {}))
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            ready.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        resource.cleanup.assert_called_once()
+
     async def test_soundcloud_lookup_and_preview_rejection(self):
         from music import extract
         with patch('yt_dlp.YoutubeDL') as factory:
@@ -83,6 +111,8 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
                 await f.manager.play(f.request, 'Song')
             f.voice.play.assert_not_called()
             source.return_value.cleanup.assert_called_once()
+            self.assertEqual(source.call_args.args[0], 'local-audio.mp3')
+            f.manager.prepare.return_value[1].cleanup.assert_called_once()
         await f.manager.close()
 
     async def test_vc_chat_panel_has_all_buttons_and_is_reused(self):
@@ -154,7 +184,7 @@ class MusicTests(unittest.IsolatedAsyncioTestCase):
     async def test_sources_and_spotify_track_validation(self):
         self.assertEqual(source_query('song and artist'), ('search', 'song and artist'))
         self.assertEqual(source_query('https://soundcloud.com/artist/song')[0], 'soundcloud')
-        for invalid in ('https://youtube.com/watch?v=test', 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT', 'http://soundcloud.com/artist/song', 'https://localhost/song',
+        for invalid in ('https://youtube.com/watch?v=test', 'http://soundcloud.com/artist/song', 'https://localhost/song',
                         'https://open.spotify.com/playlist/123', 'https://youtube.com:bad/watch'):
             with self.assertRaises(MusicError): source_query(invalid)
 
