@@ -92,7 +92,7 @@ class Bot(discord.Client):
         self.tree.copy_global_to(guild=guild)
         synced = await self.tree.sync(guild=guild)
         logging.info('Registered commands for this instance: %s', ', '.join(command.name for command in synced))
-        logging.info('Package selector version 1: synced %s commands for server %s; /generate requires tweaks or premium.', len(synced), GUILD_ID)
+        logging.info('Package selector version 2: synced %s commands for server %s; /generate requires tweaks, premium or overclock.', len(synced), GUILD_ID)
 
     async def on_ready(self):
         self.giveaways.start()
@@ -276,11 +276,12 @@ async def rules(i: discord.Interaction):
 @app_commands.choices(package=[
     app_commands.Choice(name='Vynex Tweaks', value='tweaks'),
     app_commands.Choice(name='VYNEX Premium Package', value='premium'),
+    app_commands.Choice(name='Vynex Overclock Bundle', value='overclock'),
 ])
 async def generate(i: discord.Interaction, package: app_commands.Choice[str]):
     await i.response.defer(ephemeral=True)
     application = package.value
-    app_name = {'tweaks': 'Vynex Tweaks', 'premium': 'VYNEX Premium Package'}[application]
+    app_name = {'tweaks': 'Vynex Tweaks', 'premium': 'VYNEX Premium Package', 'overclock': 'Vynex Overclock Bundle'}[application]
     key = await vynex.generate(application)
     logged = await bot.event_logs.key_generated(i, app_name, key)
     await reply(i, f'## Generated 1 {app_name} key\n**Expiry:** Lifetime\n**App:** {app_name}\n'

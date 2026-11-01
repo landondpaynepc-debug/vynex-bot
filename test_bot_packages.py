@@ -24,7 +24,7 @@ class Packages(unittest.IsolatedAsyncioTestCase):
         exec(compile(ast.Module(body=[command],type_ignores=[]),'discord-registration-test','exec'),globals_)
         option=tree.get_command('generate').to_dict(tree)['options'][0]
         self.assertTrue(option['required'])
-        self.assertEqual([(c['name'],c['value']) for c in option['choices']],[('Vynex Tweaks','tweaks'),('VYNEX Premium Package','premium')])
+        self.assertEqual([(c['name'],c['value']) for c in option['choices']],[('Vynex Tweaks','tweaks'),('VYNEX Premium Package','premium'),('Vynex Overclock Bundle','overclock')])
         await client.close()
 
     async def test_generation_sends_selected_application_and_rejects_mismatch(self):
@@ -45,7 +45,7 @@ class Packages(unittest.IsolatedAsyncioTestCase):
         globals_={'aiohttp':SimpleNamespace(ClientTimeout=lambda **kw:None,ClientSession=Session,ClientError=OSError),'asyncio':asyncio,'re':re,'urlsplit':urlsplit}
         exec(compile(ast.Module(body=[error_class,client_class],type_ignores=[]),'bot-client-test','exec'),globals_)
         client=globals_['VynexClient']('https://example.invalid','offline-admin')
-        for app in ('tweaks','premium'):
+        for app in ('tweaks','premium','overclock'):
             scope['value']=app
             self.assertEqual(await client.generate(app),'VYNEX-ABCD-1234-5678')
             self.assertEqual(requests[-1]['headers']['X-Vynex-App'],app)
@@ -64,7 +64,7 @@ class Packages(unittest.IsolatedAsyncioTestCase):
         self.assertIn('app_commands.check(key_staff)',decorators)
         choices=next(d for d in command.decorator_list if isinstance(d,ast.Call) and ast.unparse(d.func)=='app_commands.choices')
         values=[next(k.value.value for k in choice.keywords if k.arg=='value') for choice in choices.keywords[0].value.elts]
-        self.assertEqual(values,['tweaks','premium'])
+        self.assertEqual(values,['tweaks','premium','overclock'])
         self.assertIn('await vynex.generate(application)',ast.unparse(command))
 
 if __name__=='__main__': unittest.main(verbosity=2)

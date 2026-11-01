@@ -106,4 +106,6 @@ New tickets notify only the opener and staff role `1542769771844599878` using ex
 
 Ticket panels, welcome messages, confirmations and archives retain boxed Components V2 containers with a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
 
+## Overclock Bundle
 
+The third product uses X-Vynex-App: overclock. Overclock accounts, sessions, codes, verification and reset records are separate from Tweaks and Premium. Use Discord /generate and choose Vynex Overclock Bundle, or select it in Vynex Developer 1.2. Existing Tweaks and Premium data is unchanged. Deploy the API before the bot/client update. No emailed self-service codes are enabled.

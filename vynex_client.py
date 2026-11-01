@@ -21,8 +21,8 @@ class VynexClient:
             raise ValueError('Set VYNEX_ADMIN_PASSWORD to the existing administrator password from your Vynex Render service.')
 
     async def generate(self, application: str):
-        if application not in ('tweaks', 'premium'):
-            raise VynexError('Choose Vynex Tweaks or VYNEX Premium Package.')
+        if application not in ('tweaks', 'premium', 'overclock'):
+            raise VynexError('Choose Vynex Tweaks, Premium or Overclock Bundle.')
         timeout = aiohttp.ClientTimeout(total=90, connect=15)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
