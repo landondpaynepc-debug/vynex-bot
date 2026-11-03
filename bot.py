@@ -70,7 +70,7 @@ class Bot(discord.Client):
         self.features = {}
         self.health_server = HealthServer(self.is_ready, lambda: self.features.copy())
         self.tickets = TicketManager(self, GUILD_ID)
-        self.appeals = AppealManager(self, GUILD_ID)
+        self.appeals = AppealManager(self, GUILD_ID, vynex)
         self.rules = RulesManager(self, GUILD_ID)
         self.event_logs = EventLogs(self, GUILD_ID)
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
@@ -79,6 +79,7 @@ class Bot(discord.Client):
 
     async def close(self):
         try:
+            await self.appeals.close()
             await self.giveaways.close()
             await self.health_server.close()
         finally:
@@ -99,6 +100,7 @@ class Bot(discord.Client):
         logging.info('Package selector version 2: synced %s commands for server %s; /generate requires tweaks, premium or overclock.', len(synced), GUILD_ID)
 
     async def on_ready(self):
+        self.appeals.start()
         self.giveaways.start()
         for name, refresh in (('support panel', self.tickets.ensure_support),
                               ('ban appeals', self.appeals.check),
@@ -391,6 +393,22 @@ async def ban(i: discord.Interaction, member: discord.Member, reason: app_comman
         raise
     notice = 'Appeal invitation sent by DM.' if delivered else 'Appeal DM could not be delivered or confirmed. Check the staff logs.'
     await reply(i, f'{member.display_name} banned. {notice}')
+
+
+@bot.tree.command(description='Create a private web appeal link for a banned account.')
+@app_commands.guild_only()
+@app_commands.check(server_only)
+@app_commands.default_permissions(ban_members=True)
+@app_commands.checks.has_permissions(ban_members=True)
+@app_commands.checks.bot_has_permissions(ban_members=True)
+async def appeallink(i: discord.Interaction, user_id: str):
+    if not user_id.isdecimal() or not 0 < int(user_id) < 2**64:
+        return await reply(i, 'Enter a valid numeric Discord user ID.')
+    await i.response.defer(ephemeral=True)
+    await i.guild.fetch_ban(discord.Object(id=int(user_id)))
+    import secrets
+    url = await vynex.appeal_link(GUILD_ID, int(user_id), secrets.token_hex(12), discord.utils.utcnow())
+    await reply(i, f'Personal appeal link for Discord account `{user_id}`:\n{url}\nShare only with that person. Valid for 30 days.')
 
 
 @bot.tree.command(description='Unban a user by their Discord user ID.')

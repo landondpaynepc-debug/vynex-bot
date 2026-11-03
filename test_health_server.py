@@ -67,6 +67,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
         class FakeAppeals:
             def __init__(self, *args): pass
             def register_view(self): events.append('appeals')
+            async def close(self): pass
         globals_ = {'discord':discord,'app_commands':app_commands,'HealthServer':FakeHealth,'TicketManager':FakeTickets,
                     'RulesManager':FakeTickets,
                     'EventLogs':FakeTickets,
@@ -74,7 +75,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
                     'WelcomeManager':FakeTickets,
                     'GiveawayManager':FakeGiveaways,
                     'AppealManager':FakeAppeals,
-                    'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
+                    'GUILD_ID':1,'KEY_ROLE_ID':0,'vynex':None,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()
         async def sync(**kw): events.append('sync'); return []

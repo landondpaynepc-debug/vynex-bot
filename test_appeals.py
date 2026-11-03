@@ -66,8 +66,9 @@ class AppealTests(unittest.IsolatedAsyncioTestCase):
         modal = request.response.send_modal.call_args.args[0]
         self.assertIsInstance(modal, AppealModal)
         self.assertEqual(len(modal.children), 4)
-        self.assertEqual([c.required for c in modal.children], [True, True, True, False])
-        self.assertTrue(all(c.max_length == 1000 and len(c.label) <= 45 for c in modal.children))
+        self.assertEqual([c.required for c in modal.answers], [True, True, True, False])
+        self.assertTrue(all(c.max_length == 1000 for c in modal.answers))
+        self.assertTrue(all(c['type'] == 18 for c in modal.to_dict()['components']))
 
     async def test_preban_and_gateway_event_send_only_one_invitation(self):
         f = fixture()
