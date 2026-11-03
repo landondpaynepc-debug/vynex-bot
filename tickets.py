@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import discord
 from ui_messages import TICKET_COLOR, send_text, text_view
+from panel_style import PANEL_COLOR, artwork, publish_panel
 
 PANEL_CHANNEL_ID = 1566855989578440804
 LEGACY_PANEL_CHANNEL_ID = 1542759018462715924
@@ -17,25 +18,21 @@ TRANSCRIPT_CHANNEL_ID = 1542810514617536533
 STAFF_ROLE_ID = 1542769771844599878
 OPEN_ID = 'vynex:ticket:open:v2'
 CLOSE_ID = 'vynex:ticket:close:v2'
+CLAIM_ID = 'vynex:ticket:claim:v1'
 KINDS = {'shop': 'Shop Support', 'general': 'General Support', 'partnership': 'Partnership Support'}
 LEGACY_KINDS = {'buy': 'shop', 'support': 'general'}
-TOPIC = re.compile(r'^vynex-ticket:v1;owner=(\d+);kind=(buy|support|shop|general|partnership)$')
+TOPIC = re.compile(r'^vynex-ticket:v1;owner=(\d+);kind=(buy|support|shop|general|partnership)(?:;claimed=(\d+))?$')
 NO_MENTIONS = discord.AllowedMentions.none()
-DESCRIPTION = '''# Vynex Tweaks — Support Center
-
-Choose the category that fits your request:
-
-### Shop Support
-Purchases, access codes, billing questions and help with your Vynex product.
-
-### General Support
-Server questions, community issues and anything that does not fit another category.
-
-### Partnership Support
-Partnerships, collaborations and business proposals.
-
-A private ticket will open for you and the support team. One open ticket per category.
-'''
+DESCRIPTION = ('### Vynex Support Desk\n'
+               'Need a hand with a purchase, a question, or a partnership? '
+               'Open a private ticket and our team will take it from there.')
+SUPPORT_GUIDE = ('**Choose the right team**\n'
+                 '• **Shop Support** — purchases, access codes, and product help.\n'
+                 '• **General Support** — server questions and community issues.\n'
+                 '• **Partnership Support** — collaborations and business enquiries.\n\n'
+                 '**Help us help you**\n'
+                 'Keep one issue per ticket. Include your product, a short explanation, '
+                 'and any useful screenshots. Never share passwords or full access codes.')
 
 
 def ticket_info(channel):
@@ -48,6 +45,13 @@ def ticket_info(channel):
     return int(match[1]), LEGACY_KINDS.get(match[2], match[2])
 
 
+def ticket_claim(channel):
+    if ticket_info(channel) is None:
+        return None
+    value = TOPIC.fullmatch(channel.topic)[3]
+    return int(value) if value else None
+
+
 def safe_link(url):
     return html.escape(url, quote=True) if urlsplit(url).scheme in ('https', 'http') else ''
 
@@ -56,6 +60,18 @@ def has_component(message, custom_id):
     def contains(items):
         return any(item.get('custom_id') == custom_id or contains(item.get('components', [])) for item in items)
     return contains([component.to_dict() for component in message.components])
+
+
+def component_label(message, custom_id):
+    def find(items):
+        for item in items:
+            if item.get('custom_id') == custom_id:
+                return item.get('label')
+            result = find(item.get('components', []))
+            if result is not None:
+                return result
+        return None
+    return find([component.to_dict() for component in message.components])
 
 
 def message_html(message, attachment_links=None):
@@ -115,7 +131,10 @@ class OpenSelect(discord.ui.Select):
         self.manager = manager
         super().__init__(custom_id=OPEN_ID, placeholder='Choose a support category',
                          options=[discord.SelectOption(label=label, value=value,
-                                  emoji={'shop':'🛒','general':'🛠️','partnership':'🤝'}[value]) for value, label in KINDS.items()])
+                                  description={'shop':'Purchases, access codes, and product help',
+                                               'general':'Server questions and community issues',
+                                               'partnership':'Collaborations and business enquiries'}[value])
+                                  for value, label in KINDS.items()])
 
     async def callback(self, interaction):
         await self.manager.open_ticket(interaction, self.values[0])
@@ -125,10 +144,23 @@ class TicketPanel(discord.ui.LayoutView):
     def __init__(self, manager):
         super().__init__(timeout=None)
         self.add_item(discord.ui.Container(
+            artwork('support'),
             discord.ui.TextDisplay(DESCRIPTION),
-            discord.ui.Separator(visible=False),
+            discord.ui.TextDisplay(SUPPORT_GUIDE),
+            discord.ui.Separator(spacing=discord.SeparatorSpacing.small),
+            discord.ui.TextDisplay('-# Private to you and the team · One open ticket per category'),
             discord.ui.ActionRow(OpenSelect(manager)),
-            accent_colour=TICKET_COLOR))
+            artwork('footer'), accent_colour=PANEL_COLOR))
+
+
+class ClaimButton(discord.ui.Button):
+    def __init__(self, manager, claimed_by=None):
+        self.manager = manager
+        super().__init__(label='Release Claim' if claimed_by else 'Claim Ticket',
+                         style=discord.ButtonStyle.secondary, custom_id=CLAIM_ID)
+
+    async def callback(self, interaction):
+        await self.manager.claim_ticket(interaction)
 
 
 class CloseButton(discord.ui.Button):
@@ -144,10 +176,13 @@ class CloseButton(discord.ui.Button):
 
 
 class TicketControls(discord.ui.LayoutView):
-    def __init__(self, manager, welcome=None):
+    def __init__(self, manager, welcome=None, claimed_by=None):
         super().__init__(timeout=None)
         children = [discord.ui.TextDisplay(welcome or '### Ticket controls\nClose your ticket when you are finished.')]
-        children.append(discord.ui.ActionRow(CloseButton(manager)))
+        children.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.TextDisplay(
+            f'**Assigned to:** <@{claimed_by}>' if claimed_by else '-# Awaiting a staff member · Staff can claim this ticket below.'))
+        children.append(discord.ui.ActionRow(ClaimButton(manager, claimed_by), CloseButton(manager)))
         self.add_item(discord.ui.Container(*children, accent_colour=TICKET_COLOR))
 
 
@@ -204,13 +239,13 @@ class TicketManager:
             async for message in channel.pins(limit=100):
                 if ours(message): existing = message; break
             if existing is None:
-                async for message in channel.history(limit=100):
+                async for message in channel.history(limit=None):
                     if ours(message): existing = message; break
             view = TicketPanel(self)
             if existing:
-                await existing.edit(view=view, allowed_mentions=NO_MENTIONS)
+                await publish_panel(channel, view, 'support', message=existing)
                 return existing
-            message = await channel.send(view=view, allowed_mentions=NO_MENTIONS)
+            message = await publish_panel(channel, view, 'support')
             try:
                 await message.pin(reason='Persistent Vynex ticket panel')
             except discord.Forbidden:
@@ -242,7 +277,7 @@ class TicketManager:
             'general': 'Describe your question or issue and include any relevant details so the team can help.',
             'partnership': 'Introduce your community or business, share relevant links, and describe your proposed partnership and what each side would contribute.',
         }[kind]
-        return f'## {KINDS[kind]}\n<@{owner_id}>, welcome!\nStaff: <@&{self.staff_role_id}>\n{text}\n\nStaff will assist you here.'
+        return f'### {KINDS[kind]}\nWelcome, <@{owner_id}>.\n\n{text}\n\n-# Support team: <@&{self.staff_role_id}>'
 
     async def refresh_open_tickets(self):
         guild = self.bot.get_guild(self.guild_id)
@@ -255,10 +290,56 @@ class TicketManager:
             try:
                 async for message in channel.history(limit=None, oldest_first=True):
                     if message.author.id == self.bot.user.id and has_component(message, CLOSE_ID):
-                        await message.edit(view=TicketControls(self, self.welcome_text(*info)), allowed_mentions=NO_MENTIONS)
+                        await message.edit(view=TicketControls(self, self.welcome_text(*info), ticket_claim(channel)),
+                                           allowed_mentions=NO_MENTIONS)
                         break
             except discord.HTTPException:
                 logging.warning('Unable to refresh existing ticket controls in channel %s.', channel.id)
+
+    async def claim_ticket(self, interaction):
+        if (interaction.guild_id != self.guild_id or not isinstance(interaction.user, discord.Member)
+                or not self.is_staff(interaction.user)):
+            return await send_text(interaction.response.send_message,
+                                   'Only the support team can claim tickets.', ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        # Share the close lock so a claim cannot race transcript export or deletion.
+        async with self.close_lock:
+            try:
+                channel = await interaction.guild.fetch_channel(interaction.channel_id)
+                info = ticket_info(channel)
+                if info is None:
+                    return await send_text(interaction.followup.send,
+                                           'This is not an active Vynex ticket.', ephemeral=True)
+                previous = ticket_claim(channel)
+                # The clicked label records intent; stale Claim buttons never release a newer claim.
+                label = component_label(interaction.message, CLAIM_ID)
+                if label not in ('Claim Ticket', 'Release Claim') or interaction.message.author.id != self.bot.user.id:
+                    return await send_text(interaction.followup.send,
+                                           'Use the current ticket controls to update a claim.', ephemeral=True)
+                releasing = label == 'Release Claim'
+                if previous and (not releasing or (previous != interaction.user.id
+                        and not interaction.user.guild_permissions.administrator)):
+                    return await send_text(interaction.followup.send,
+                        f'This ticket is already assigned to <@{previous}>. Only that staff member or an administrator can release it.',
+                        ephemeral=True)
+                if releasing and not previous:
+                    return await send_text(interaction.followup.send,
+                                           'This ticket is already unclaimed. Use the updated Claim Ticket button.', ephemeral=True)
+                claimed_by = None if releasing else interaction.user.id
+                topic = channel.topic.split(';claimed=', 1)[0]
+                if claimed_by:
+                    topic += f';claimed={claimed_by}'
+                await channel.edit(topic=topic, reason=f'Vynex ticket claim updated by {interaction.user.id}')
+                view = TicketControls(self, self.welcome_text(*info), claimed_by)
+                await interaction.message.edit(view=view, allowed_mentions=NO_MENTIONS)
+                await send_text(interaction.followup.send,
+                    'Claim released. Another staff member can take this ticket.' if releasing else
+                    'Ticket claimed. You are now listed as the assigned staff member.', ephemeral=True)
+            except (discord.HTTPException, OSError) as error:
+                logging.warning('Ticket claim update could not be confirmed (%s).', type(error).__name__)
+                await send_text(interaction.followup.send,
+                    'The claim update could not be confirmed. Ask staff to refresh ticket controls with /shop before retrying.',
+                    ephemeral=True)
 
     async def open_ticket(self, interaction, kind):
         kind = LEGACY_KINDS.get(kind, kind)

@@ -4,6 +4,7 @@ import logging
 
 import discord
 from ui_messages import send_text
+from panel_style import PANEL_COLOR, artwork, publish_panel
 
 from rules import rules_parts
 from tickets import PANEL_CHANNEL_ID, NO_MENTIONS, TICKET_COLOR, has_component
@@ -41,9 +42,9 @@ ABOUT = '''# About Vynex Tweaks
 class DashboardSelect(discord.ui.Select):
     def __init__(self, manager):
         self.manager = manager
-        super().__init__(custom_id=MENU_ID, placeholder='Choose About or Rules', options=[
-            discord.SelectOption(label='About Vynex Tweaks', value='about', emoji='ℹ️'),
-            discord.SelectOption(label='Rules', value='rules', emoji='📋'),
+        super().__init__(custom_id=MENU_ID, placeholder='Explore the community', options=[
+            discord.SelectOption(label='About Vynex Tweaks', value='about', description='The project, our tools, and what we do'),
+            discord.SelectOption(label='Rules', value='rules', description='Community guidelines and server policies'),
         ])
 
     async def callback(self, interaction):
@@ -54,11 +55,18 @@ class DashboardView(discord.ui.LayoutView):
     def __init__(self, manager, text=None):
         super().__init__(timeout=None)
         if text is None:
-            text = ('# Vynex Tweaks — Community Dashboard\n'
-                    'Welcome to Vynex Tweaks. Find information about Vynex and read the community rules.\n\n'
-                    '### About Vynex Tweaks\nLearn about the project and its PC optimization features.\n\n'
-                    '### Community Rules\nRead the community rules, advertising policies and moderation notices.\n\n'
-                    'Choose an option below to get started.\n-# Optimize. Refine. Perform.')
+            self.add_item(discord.ui.Container(
+                artwork('community'),
+                discord.ui.TextDisplay('### Vynex Community\n'
+                    'Your home for Vynex Tweaks. Get to know the project and find your way around.'),
+                discord.ui.TextDisplay('**Start here**\n'
+                    '• **About Vynex** — our tools and the ideas behind them.\n'
+                    '• **Community rules** — a few guidelines to keep things running smoothly.'),
+                discord.ui.Separator(spacing=discord.SeparatorSpacing.small),
+                discord.ui.TextDisplay('-# Choose a section below. Only you can see the page you open.'),
+                discord.ui.ActionRow(DashboardSelect(manager)),
+                artwork('footer'), accent_colour=PANEL_COLOR))
+            return
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(text), discord.ui.Separator(visible=False),
             discord.ui.ActionRow(DashboardSelect(manager)), accent_colour=TICKET_COLOR))
@@ -126,6 +134,6 @@ class DashboardManager:
                 raise RuntimeError('Dashboard channel must be a text channel in the configured server.')
             async for message in channel.history(limit=None, oldest_first=True):
                 if message.author.id == self.bot.user.id and has_component(message, MENU_ID):
-                    await message.edit(view=DashboardView(self), allowed_mentions=NO_MENTIONS)
+                    await publish_panel(channel, DashboardView(self), 'community', message=message)
                     return message
-            return await channel.send(view=DashboardView(self), allowed_mentions=NO_MENTIONS)
+            return await publish_panel(channel, DashboardView(self), 'community')

@@ -7,6 +7,7 @@ from dashboard import (DashboardManager, DashboardView, RulesPager, ABOUT,
                        DASHBOARD_CHANNEL_ID, MENU_ID)
 from rules import rules_parts
 from tickets import PANEL_CHANNEL_ID, TICKET_COLOR
+from panel_style import PANEL_COLOR
 
 
 async def stream(values):
@@ -26,8 +27,8 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(view.is_persistent())
         root = view.to_components()[0]
         self.assertEqual(root['type'], 17)
-        self.assertEqual(root['accent_color'], TICKET_COLOR)
-        select = root['components'][-1]['components'][0]
+        self.assertEqual(root['accent_color'], PANEL_COLOR)
+        select = next(c for c in root['components'] if c['type'] == 1)['components'][0]
         self.assertEqual(select['custom_id'], MENU_ID)
         self.assertEqual([option['label'] for option in select['options']],
                          ['About Vynex Tweaks', 'Rules'])

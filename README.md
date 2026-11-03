@@ -72,7 +72,7 @@ Key-generation cards, warnings, command replies and ticket/dashboard notices als
 
 ## Public community dashboard
 
-The public dashboard is posted or refreshed automatically in channel `1562754545631887461`. Its persistent dropdown has exactly **About Vynex Tweaks** and **Rules**. Every selection opens a temporary, private panel for the selecting member, leaving the shared dashboard unchanged. About uses the supplied Vynex feature descriptions. Rules presents the latest supplied community and advertising rules with Previous/Next navigation. Support has moved to its own channel. Previously opened Assistance menus redirect members to the new Support Center. All panels retain dark gray Components V2 containers. The dashboard works after a restart; `/dashboard` (Manage Server required) refreshes it manually without posting duplicates. The bot needs View Channel, Send Messages and Read Message History in the dashboard channel; everyone using the dashboard needs access to that channel.
+The public dashboard is posted or refreshed automatically in channel `1562754545631887461`. Its persistent dropdown has exactly **About Vynex Tweaks** and **Rules**. Every selection opens a temporary, private panel for the selecting member, leaving the shared dashboard unchanged. About uses the supplied Vynex feature descriptions. Rules presents the latest supplied community and advertising rules with Previous/Next navigation. Support has moved to its own channel. Previously opened Assistance menus redirect members to the new Support Center. The public panel uses a Vynex banner, concise sections, a subtle divider, the persistent dropdown and a matching footer. The bot uploads the artwork as Discord attachments; no external image host is required. The dashboard works after a restart; `/dashboard` (Manage Server required) refreshes it manually without posting duplicates. The bot needs View Channel, Send Messages, Attach Files and Read Message History in the dashboard channel; everyone using the dashboard needs access to that channel.
 
 ## Staff event logs
 
@@ -104,7 +104,7 @@ The panel is posted automatically after a successful Render deployment. The HTTP
 
 New tickets notify only the opener and staff role `1542769771844599878` using explicit allowed-mention lists; everyone and other roles cannot be pinged by that message. Discord requires the staff role to be mentionable or the bot to have permission to mention non-mentionable roles for a notification to fire.
 
-Ticket panels, welcome messages, confirmations and archives retain boxed Components V2 containers with a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
+The community dashboard and Support Center use matching navy artwork and a slate accent (`#27364D`). Ticket controls, confirmations and archives retain a dark gray accent (`#2B2D31`). Buttons use Discord's neutral secondary style; Discord controls the container and button backgrounds. Existing open-ticket welcome/control messages are refreshed on bot startup without sending repeat pings.
 
 ## Overclock Bundle
 
@@ -121,3 +121,11 @@ Submissions include the Discord account, user ID, time and all answers in channe
 The bot requires View Channel, Send Messages, Embed Links and Read Message History in the appeals channel, plus Ban Members to verify eligibility. The moderation gateway intent is already enabled in code. Keep submitted appeal messages: their markers prevent duplicate submissions across restarts, including retries after an uncertain send result. Only one appeal is accepted per invitation period; a later ban receives a new invitation. No questionnaire text is written to application logs or local storage.
 
 `/health` identifies this release as `support-appeals-v1`, includes the Render commit, and reports startup checks for the support panel, ban appeals and dashboard. A false feature flag identifies a channel/permission refresh failure; `/ready` separately reports Discord connectivity.
+
+## Ticket claims and panel artwork
+
+Every new and existing ticket receives a **Claim Ticket** button next to **Close Ticket**. Only the configured support role or an administrator can claim a ticket. The card identifies the assigned staff member, and the button becomes **Release Claim**. Only that staff member or an administrator can release the assignment. Claiming does not change channel access or the ticket owner's ability to close it.
+
+Claims are stored in the channel topic and recovered after restarts. Simultaneous claims are serialized in the running bot; the second staff member is told who already owns it. Claim changes also share the transcript/close lock. Old tickets without a claim continue to work. The topic remains the durable record if an edit to the card fails; `/shop` refreshes ticket controls and recovers the displayed assignment. Run one active bot instance to avoid concurrent topic writes from independent processes.
+
+The public panels use the committed `assets/vynex-community.png`, `assets/vynex-support.png` and `assets/vynex-footer.png`. These are reattached when existing panels are refreshed, so expired Discord attachment links are not reused. The bot needs Attach Files in both public panel channels. Existing bot-owned messages are edited; startup refresh does not ping members. The artwork renderer in `tools/render_panel_assets.cjs` is a development tool only, using `@napi-rs/canvas`; Node is not required to run the bot. Discord controls the final card width, text sizes and background theme.

@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+from panel_style import PANEL_COLOR
 from tickets import (TicketManager, TicketPanel, TicketControls, DESCRIPTION, CATEGORY_ID,
                      PANEL_CHANNEL_ID, LEGACY_PANEL_CHANNEL_ID, TRANSCRIPT_CHANNEL_ID, OPEN_ID,
                      TICKET_COLOR, write_transcripts, ticket_info)
@@ -62,8 +63,8 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(panel, discord.ui.LayoutView)
         self.assertTrue(panel.is_persistent())
         self.assertEqual(panel.to_components()[0]['type'], 17)
-        self.assertEqual(panel.to_components()[0]['accent_color'], TICKET_COLOR)
-        select = panel.to_components()[0]['components'][-1]['components'][0]
+        self.assertEqual(panel.to_components()[0]['accent_color'], PANEL_COLOR)
+        select = next(c for c in panel.to_components()[0]['components'] if c['type'] == 1)['components'][0]
         self.assertEqual(select['custom_id'], OPEN_ID)
         self.assertEqual([o['label'] for o in select['options']], ['Shop Support', 'General Support', 'Partnership Support'])
         self.assertIn('PayPal', f.manager.welcome_text(42, 'shop'))
@@ -203,7 +204,7 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
             def check(items):
                 for item in items:
                     if item['type'] == 17:
-                        self.assertEqual(item['accent_color'], TICKET_COLOR)
+                        self.assertEqual(item['accent_color'], PANEL_COLOR if isinstance(view, TicketPanel) else TICKET_COLOR)
                     if item['type'] == 2:
                         self.assertEqual(item['style'], discord.ButtonStyle.secondary.value)
                     check(item.get('components', []))
