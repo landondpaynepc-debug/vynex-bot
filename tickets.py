@@ -8,45 +8,34 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import discord
-from ui_messages import TICKET_COLOR, send_text
+from ui_messages import TICKET_COLOR, send_text, text_view
 
-PANEL_CHANNEL_ID = 1542759018462715924
+PANEL_CHANNEL_ID = 1566855989578440804
+LEGACY_PANEL_CHANNEL_ID = 1542759018462715924
 CATEGORY_ID = 1542810493792550962
 TRANSCRIPT_CHANNEL_ID = 1542810514617536533
 STAFF_ROLE_ID = 1542769771844599878
 OPEN_ID = 'vynex:ticket:open:v2'
 CLOSE_ID = 'vynex:ticket:close:v2'
-KINDS = {'buy': 'Buy Tweaks', 'support': 'Support'}
-TOPIC = re.compile(r'^vynex-ticket:v1;owner=(\d+);kind=(buy|support)$')
+KINDS = {'shop': 'Shop Support', 'general': 'General Support', 'partnership': 'Partnership Support'}
+LEGACY_KINDS = {'buy': 'shop', 'support': 'general'}
+TOPIC = re.compile(r'^vynex-ticket:v1;owner=(\d+);kind=(buy|support|shop|general|partnership)$')
 NO_MENTIONS = discord.AllowedMentions.none()
-DESCRIPTION = '''# Vynex Tweaks — How to Purchase
+DESCRIPTION = '''# Vynex Tweaks — Support Center
 
-Ready to get **Vynex Tweaks**? Follow these simple steps to purchase and get access.
+Choose the category that fits your request:
 
-**How to Buy:**
-1. Open a purchase ticket.
-2. Tell us which Vynex Tweaks package you want.
-3. A staff member will provide the payment information.
-4. Complete your payment through **PayPal**.
-5. Send proof of payment in your ticket.
-6. Once your payment is confirmed, you’ll receive your **Vynex Tweaks access/key** and instructions.
+### Shop Support
+Purchases, access codes, billing questions and help with your Vynex product.
 
-**Payment Method:** PayPal
-Please only send payments using the information provided by an authorized Vynex Tweaks staff member.
+### General Support
+Server questions, community issues and anything that does not fit another category.
 
-**Vynex Tweaks — Optimize. Tweak. Perform.**
+### Partnership Support
+Partnerships, collaborations and business proposals.
 
-# Vynex Tweaks | Purchase Support
-**Interested in purchasing Vynex Tweaks? Open a ticket below and our team will assist you with your purchase. Please have the following information ready:**
-• The package/product you would like to purchase
-• Your preferred payment method (PayPal)
-• Any questions you have before purchasing
-
-**Once your payment has been confirmed, a staff member will provide your Vynex Tweaks access/key along with any necessary setup instructions.**
-
-⚠️ **Important:** Never send payment to anyone unless they are an authorized Vynex Tweaks staff member.
-
-### Click below to open a Purchase Ticket and get started.'''
+A private ticket will open for you and the support team. One open ticket per category.
+'''
 
 
 def ticket_info(channel):
@@ -56,7 +45,7 @@ def ticket_info(channel):
     match = TOPIC.fullmatch(topic)
     if getattr(channel, 'category_id', None) != CATEGORY_ID or not match:
         return None
-    return int(match[1]), match[2]
+    return int(match[1]), LEGACY_KINDS.get(match[2], match[2])
 
 
 def safe_link(url):
@@ -124,9 +113,9 @@ async def write_transcripts(channel, directory, limit, attachment_links=None):
 class OpenSelect(discord.ui.Select):
     def __init__(self, manager):
         self.manager = manager
-        super().__init__(custom_id=OPEN_ID, placeholder='Choose Buy Tweaks or Support',
+        super().__init__(custom_id=OPEN_ID, placeholder='Choose a support category',
                          options=[discord.SelectOption(label=label, value=value,
-                                  emoji='🛒' if value == 'buy' else '🛠️') for value, label in KINDS.items()])
+                                  emoji={'shop':'🛒','general':'🛠️','partnership':'🤝'}[value]) for value, label in KINDS.items()])
 
     async def callback(self, interaction):
         await self.manager.open_ticket(interaction, self.values[0])
@@ -228,9 +217,31 @@ class TicketManager:
                 logging.warning('Ticket panel posted; Manage Messages permission is needed to pin it.')
             return message
 
+    async def ensure_support(self):
+        # Only retire the old controls after the new panel was successfully published.
+        panel = await self.ensure_panel()
+        await self.retire_old_panels()
+        return panel
+
+    async def retire_old_panels(self):
+        channel = await self.resolve(LEGACY_PANEL_CHANNEL_ID, discord.TextChannel)
+        async for message in channel.history(limit=None, oldest_first=True):
+            if message.author.id == self.bot.user.id and has_component(message, OPEN_ID):
+                await message.edit(view=text_view(
+                    f'Tickets have moved to <#{PANEL_CHANNEL_ID}>. This channel now receives ban appeals.'),
+                    allowed_mentions=NO_MENTIONS)
+                if message.pinned:
+                    try:
+                        await message.unpin(reason='Support tickets moved to the new channel')
+                    except discord.Forbidden:
+                        logging.warning('Old ticket controls retired but could not be unpinned.')
+
     def welcome_text(self, owner_id, kind):
-        text = ('Tell staff which package you want, confirm PayPal as your payment method, and ask any purchase questions.'
-                if kind == 'buy' else 'Describe the problem, the app you are using, and any error messages or screenshots.')
+        text = {
+            'shop': 'Tell staff which package you purchased or want to buy, and describe your question or error. Payment method: PayPal. Never send payment except using details provided by authorized staff.',
+            'general': 'Describe your question or issue and include any relevant details so the team can help.',
+            'partnership': 'Introduce your community or business, share relevant links, and describe your proposed partnership and what each side would contribute.',
+        }[kind]
         return f'## {KINDS[kind]}\n<@{owner_id}>, welcome!\nStaff: <@&{self.staff_role_id}>\n{text}\n\nStaff will assist you here.'
 
     async def refresh_open_tickets(self):
@@ -250,6 +261,7 @@ class TicketManager:
                 logging.warning('Unable to refresh existing ticket controls in channel %s.', channel.id)
 
     async def open_ticket(self, interaction, kind):
+        kind = LEGACY_KINDS.get(kind, kind)
         if interaction.guild_id != self.guild_id or kind not in KINDS:
             return await send_text(interaction.response.send_message, 'Use the ticket panel in the Vynex server.', ephemeral=True)
         await interaction.response.defer(ephemeral=True)
@@ -277,7 +289,7 @@ class TicketManager:
                         overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
                                                                       attach_files=True, embed_links=True)
                 channel = await interaction.guild.create_text_channel(
-                    name=f'{"buy-tweaks" if kind == "buy" else "support"}-{member.id}', category=category,
+                    name=f'{kind}-support-{member.id}', category=category,
                     overwrites=overwrites, topic=f'vynex-ticket:v1;owner={member.id};kind={kind}',
                     reason=f'Vynex {KINDS[kind]} ticket opened by {member.id}')
                 await channel.send(view=TicketControls(self, self.welcome_text(member.id, kind)),

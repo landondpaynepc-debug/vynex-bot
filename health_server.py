@@ -14,8 +14,9 @@ def configured_port():
 
 
 class HealthServer:
-    def __init__(self, is_ready):
+    def __init__(self, is_ready, feature_status=None):
         self.is_ready = is_ready
+        self.feature_status = feature_status or (lambda: {})
         self.runner = None
         self.port = None
 
@@ -23,8 +24,10 @@ class HealthServer:
         ready = bool(self.is_ready())
         status = 503 if request.path == '/ready' and not ready else 200
         return web.json_response({'ok': True, 'discord_ready': ready,
-                                  'key_packages': ['tweaks', 'premium'],
-                                  'version': 'render-health-v1'}, status=status)
+                                  'key_packages': ['tweaks', 'premium', 'overclock'],
+                                  'version': 'support-appeals-v1',
+                                  'build': os.getenv('RENDER_GIT_COMMIT', 'local')[:40],
+                                  'features': self.feature_status()}, status=status)
 
     async def start(self, port=None):
         if self.runner is not None:

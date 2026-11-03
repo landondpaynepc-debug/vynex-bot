@@ -9,6 +9,7 @@ import discord
 from vynex_client import VynexClient, VynexError
 from health_server import HealthServer
 from tickets import TicketManager
+from appeals import AppealManager
 from rules import RulesManager
 from event_logs import EventLogs
 from dashboard import DashboardManager
@@ -66,8 +67,10 @@ class Bot(discord.Client):
         super().__init__(intents=intents,
                          allowed_mentions=discord.AllowedMentions.none())
         self.tree = app_commands.CommandTree(self)
-        self.health_server = HealthServer(self.is_ready)
+        self.features = {}
+        self.health_server = HealthServer(self.is_ready, lambda: self.features.copy())
         self.tickets = TicketManager(self, GUILD_ID)
+        self.appeals = AppealManager(self, GUILD_ID)
         self.rules = RulesManager(self, GUILD_ID)
         self.event_logs = EventLogs(self, GUILD_ID)
         self.dashboard = DashboardManager(self, GUILD_ID, self.tickets)
@@ -86,6 +89,7 @@ class Bot(discord.Client):
         port = await self.health_server.start()
         logging.info('Render health server listening on 0.0.0.0:%s', port)
         self.tickets.register_views()
+        self.appeals.register_view()
         self.dashboard.register_view()
         self.giveaways.register_view()
         guild = discord.Object(id=GUILD_ID)
@@ -96,7 +100,8 @@ class Bot(discord.Client):
 
     async def on_ready(self):
         self.giveaways.start()
-        for name, refresh in (('shop panel', self.tickets.ensure_panel),
+        for name, refresh in (('support panel', self.tickets.ensure_support),
+                              ('ban appeals', self.appeals.check),
                               ('open ticket messages', self.tickets.refresh_open_tickets),
                               ('community rules', self.rules.ensure_rules),
                               ('event logs', self.event_logs.check),
@@ -105,7 +110,9 @@ class Bot(discord.Client):
                               ('automatic member role', self.welcome.check_auto_role),
                               ('retired music panels', self.retire_music_panels)):
             try:
+                self.features[name] = False
                 await refresh()
+                self.features[name] = True
                 logging.info('Dark gray Components V2 %s refreshed.', name)
             except (discord.HTTPException, RuntimeError) as error:
                 logging.error('%s refresh failed (%s). Check configured channels and bot permissions.', name, type(error).__name__)
@@ -132,6 +139,12 @@ class Bot(discord.Client):
     async def on_member_join(self, member):
         await self.welcome.assign_role(member)
         await self.welcome.joined(member)
+
+    async def on_member_ban(self, guild, user):
+        await self.appeals.notify_ban(guild, user)
+
+    async def on_member_unban(self, guild, user):
+        self.appeals.forget(guild, user)
 
     async def on_raw_bulk_message_delete(self, payload):
         await self.event_logs.deleted(payload)
@@ -179,7 +192,7 @@ def audit(i, reason):
     return f'{i.user} ({i.user.id}): {reason}'[:512]
 
 
-@bot.tree.command(description='Post or refresh the Vynex Components V2 shop and support panel.')
+@bot.tree.command(description='Refresh Shop, General and Partnership Support tickets.')
 @app_commands.guild_only()
 @app_commands.check(server_only)
 @app_commands.default_permissions(manage_guild=True)
@@ -187,7 +200,7 @@ def audit(i, reason):
 async def shop(i: discord.Interaction):
     await i.response.defer(ephemeral=True)
     try:
-        panel = await bot.tickets.ensure_panel()
+        panel = await bot.tickets.ensure_support()
         await bot.tickets.refresh_open_tickets()
         await reply(i, f'Ticket panel and open ticket messages refreshed: {panel.jump_url}')
     except (discord.HTTPException, RuntimeError):
@@ -370,8 +383,14 @@ async def kick(i: discord.Interaction, member: discord.Member, reason: app_comma
 async def ban(i: discord.Interaction, member: discord.Member, reason: app_commands.Range[str, 1, 400] = 'No reason provided'):
     target_check(i, member)
     await i.response.defer(ephemeral=True)
-    await member.ban(reason=audit(i, reason), delete_message_seconds=0)
-    await reply(i, f'{member.display_name} banned.')
+    delivered = await bot.appeals.notify_ban(i.guild, member, before_ban=True)
+    try:
+        await member.ban(reason=audit(i, reason), delete_message_seconds=0)
+    except discord.HTTPException:
+        bot.appeals.forget(i.guild, member)
+        raise
+    notice = 'Appeal invitation sent by DM.' if delivered else 'Appeal DM could not be delivered or confirmed. Check the staff logs.'
+    await reply(i, f'{member.display_name} banned. {notice}')
 
 
 @bot.tree.command(description='Unban a user by their Discord user ID.')
@@ -385,6 +404,7 @@ async def unban(i: discord.Interaction, user_id: str):
         return await reply(i, 'Enter a valid numeric Discord user ID.')
     await i.response.defer(ephemeral=True)
     await i.guild.unban(discord.Object(id=int(user_id)), reason=audit(i, 'Unban'))
+    bot.appeals.forget(i.guild, discord.Object(id=int(user_id)))
     await reply(i, 'User unbanned.')
 
 

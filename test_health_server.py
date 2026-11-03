@@ -14,7 +14,7 @@ from health_server import HealthServer, configured_port
 class HealthTests(unittest.IsolatedAsyncioTestCase):
     async def test_http_liveness_readiness_and_cleanup(self):
         ready = False
-        health = HealthServer(lambda: ready)
+        health = HealthServer(lambda: ready, lambda: {'support panel': True})
         port = await health.start(port=0)
         self.assertEqual(await health.start(), port)
         try:
@@ -28,7 +28,11 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
                 ready = True
                 async with session.get(f'http://127.0.0.1:{port}/ready') as response:
                     self.assertEqual(response.status, 200)
-                    self.assertTrue((await response.json())['discord_ready'])
+                    body = await response.json()
+                    self.assertTrue(body['discord_ready'])
+                    self.assertEqual(body['version'], 'support-appeals-v1')
+                    self.assertEqual(body['features'], {'support panel': True})
+                    self.assertIn('overclock', body['key_packages'])
         finally:
             await health.close()
             await health.close()
@@ -49,7 +53,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
         bot_class = next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='Bot')
         events = []
         class FakeHealth:
-            def __init__(self, is_ready): pass
+            def __init__(self, is_ready, feature_status): pass
             async def start(self): events.append('http'); return 10000
             async def close(self): events.append('cleanup')
         class FakeTickets:
@@ -60,12 +64,16 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self, *args): pass
             def register_view(self): events.append('giveaways')
             async def close(self): pass
+        class FakeAppeals:
+            def __init__(self, *args): pass
+            def register_view(self): events.append('appeals')
         globals_ = {'discord':discord,'app_commands':app_commands,'HealthServer':FakeHealth,'TicketManager':FakeTickets,
                     'RulesManager':FakeTickets,
                     'EventLogs':FakeTickets,
                     'DashboardManager':FakeTickets,
                     'WelcomeManager':FakeTickets,
                     'GiveawayManager':FakeGiveaways,
+                    'AppealManager':FakeAppeals,
                     'GUILD_ID':1,'KEY_ROLE_ID':0,'logging':SimpleNamespace(info=lambda *a:None)}
         exec(compile(ast.Module(body=[bot_class],type_ignores=[]),'bot-lifecycle-test','exec'),globals_)
         bot = globals_['Bot']()
@@ -73,7 +81,7 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
         bot.tree.sync = sync
         await bot.setup_hook()
         await bot.close()
-        self.assertEqual(events,['http','views','dashboard','giveaways','sync','cleanup'])
+        self.assertEqual(events,['http','views','appeals','dashboard','giveaways','sync','cleanup'])
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)

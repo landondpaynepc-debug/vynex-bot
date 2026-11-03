@@ -6,7 +6,7 @@ import discord
 from dashboard import (DashboardManager, DashboardView, RulesPager, ABOUT,
                        DASHBOARD_CHANNEL_ID, MENU_ID)
 from rules import rules_parts
-from tickets import OPEN_ID, TICKET_COLOR
+from tickets import PANEL_CHANNEL_ID, TICKET_COLOR
 
 
 async def stream(values):
@@ -20,7 +20,7 @@ def interaction(owner=42, guild=10):
 
 
 class DashboardTests(unittest.IsolatedAsyncioTestCase):
-    async def test_persistent_menu_has_exact_three_choices(self):
+    async def test_persistent_menu_has_only_about_and_rules(self):
         manager = DashboardManager(NS(), 10, NS())
         view = DashboardView(manager)
         self.assertTrue(view.is_persistent())
@@ -30,9 +30,9 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         select = root['components'][-1]['components'][0]
         self.assertEqual(select['custom_id'], MENU_ID)
         self.assertEqual([option['label'] for option in select['options']],
-                         ['About Vynex Tweaks', 'Rules', 'Assistance'])
+                         ['About Vynex Tweaks', 'Rules'])
 
-    async def test_each_option_sends_private_panel_and_assistance_opens_ticket_menu(self):
+    async def test_private_panels_and_old_assistance_menu_redirect(self):
         tickets = NS(open_ticket=AsyncMock())
         manager = DashboardManager(NS(), 10, tickets)
         for value in ('about', 'rules', 'assistance'):
@@ -48,11 +48,8 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
             elif value == 'rules':
                 self.assertIsInstance(sent['view'], RulesPager)
             else:
-                select = sent['view'].children[0].children[-1].children[0]
-                self.assertEqual(select.custom_id, OPEN_ID)
-                select._values = ['support']
-                await select.callback(request)
-                tickets.open_ticket.assert_awaited_once_with(request, 'support')
+                self.assertIn(str(PANEL_CHANNEL_ID), root['components'][0]['content'])
+                tickets.open_ticket.assert_not_called()
 
     async def test_rules_all_pages_fit_and_navigation_is_private(self):
         manager = DashboardManager(NS(), 10, NS())

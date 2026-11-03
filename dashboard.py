@@ -6,7 +6,7 @@ import discord
 from ui_messages import send_text
 
 from rules import rules_parts
-from tickets import TicketPanel, NO_MENTIONS, TICKET_COLOR, has_component
+from tickets import PANEL_CHANNEL_ID, NO_MENTIONS, TICKET_COLOR, has_component
 
 DASHBOARD_CHANNEL_ID = 1562754545631887461
 MENU_ID = 'vynex:dashboard:menu:v1'
@@ -41,10 +41,9 @@ ABOUT = '''# About Vynex Tweaks
 class DashboardSelect(discord.ui.Select):
     def __init__(self, manager):
         self.manager = manager
-        super().__init__(custom_id=MENU_ID, placeholder='Choose About, Rules or Assistance', options=[
+        super().__init__(custom_id=MENU_ID, placeholder='Choose About or Rules', options=[
             discord.SelectOption(label='About Vynex Tweaks', value='about', emoji='ℹ️'),
             discord.SelectOption(label='Rules', value='rules', emoji='📋'),
-            discord.SelectOption(label='Assistance', value='assistance', emoji='🛠️'),
         ])
 
     async def callback(self, interaction):
@@ -56,12 +55,9 @@ class DashboardView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         if text is None:
             text = ('# Vynex Tweaks — Community Dashboard\n'
-                    'Welcome to Vynex Tweaks. Find community information and get help in one place.\n\n'
+                    'Welcome to Vynex Tweaks. Find information about Vynex and read the community rules.\n\n'
                     '### About Vynex Tweaks\nLearn about the project and its PC optimization features.\n\n'
                     '### Community Rules\nRead the community rules, advertising policies and moderation notices.\n\n'
-                    '### Assistance\nRead the purchase instructions, open a **Buy Tweaks** ticket '
-                    'or create a **Support** ticket. Staff will assist you privately.\n\n'
-                    '**Payment method:** PayPal. Use only payment details supplied by authorized staff.\n\n'
                     'Choose an option below to get started.\n-# Optimize. Refine. Perform.')
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(text), discord.ui.Separator(visible=False),
@@ -114,7 +110,7 @@ class DashboardManager:
             elif value == 'about':
                 view = DashboardView(self, ABOUT)
             elif value == 'assistance':
-                view = TicketPanel(self.tickets)
+                return await send_text(interaction.response.send_message, f'Support tickets have moved to <#{PANEL_CHANNEL_ID}>.', ephemeral=True)
             else:
                 return await send_text(interaction.response.send_message, 'Choose an option from the dashboard menu.', ephemeral=True)
             await interaction.response.send_message(view=view, ephemeral=True, allowed_mentions=NO_MENTIONS)

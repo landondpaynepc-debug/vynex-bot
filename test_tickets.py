@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from tickets import (TicketManager, TicketPanel, TicketControls, DESCRIPTION, CATEGORY_ID,
-                     PANEL_CHANNEL_ID, TRANSCRIPT_CHANNEL_ID, OPEN_ID, TICKET_COLOR, write_transcripts)
+                     PANEL_CHANNEL_ID, LEGACY_PANEL_CHANNEL_ID, TRANSCRIPT_CHANNEL_ID, OPEN_ID,
+                     TICKET_COLOR, write_transcripts, ticket_info)
 
 
 async def stream(values):
@@ -55,7 +56,7 @@ def fixture():
 
 
 class TicketTests(unittest.IsolatedAsyncioTestCase):
-    async def test_components_v2_are_persistent_and_have_both_choices(self):
+    async def test_persistent_components_have_three_support_categories(self):
         f = fixture()
         panel = TicketPanel(f.manager)
         self.assertIsInstance(panel, discord.ui.LayoutView)
@@ -64,9 +65,9 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(panel.to_components()[0]['accent_color'], TICKET_COLOR)
         select = panel.to_components()[0]['components'][-1]['components'][0]
         self.assertEqual(select['custom_id'], OPEN_ID)
-        self.assertEqual([o['label'] for o in select['options']], ['Buy Tweaks', 'Support'])
-        self.assertIn('PayPal', DESCRIPTION)
-        self.assertIn('Never send payment', DESCRIPTION)
+        self.assertEqual([o['label'] for o in select['options']], ['Shop Support', 'General Support', 'Partnership Support'])
+        self.assertIn('PayPal', f.manager.welcome_text(42, 'shop'))
+        self.assertIn('Never send payment', f.manager.welcome_text(42, 'shop'))
         self.assertTrue(TicketControls(f.manager).is_persistent())
         f.manager.register_views()
         self.assertEqual(f.bot.add_view.call_count, 2)
@@ -91,7 +92,45 @@ class TicketTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<@&77>', text)
         await f.manager.open_ticket(f.interaction(), 'support')
         self.assertEqual(f.guild.create_text_channel.call_count, 2)
-        self.assertIn('kind=support', f.channels[-1].topic)
+        self.assertIn('kind=general', f.channels[-1].topic)
+        await f.manager.open_ticket(f.interaction(), 'partnership')
+        self.assertEqual(f.guild.create_text_channel.call_count, 3)
+        self.assertIn('kind=partnership', f.channels[-1].topic)
+        self.assertFalse(f.channels[-1].overwrites[f.everyone].view_channel)
+
+    async def test_legacy_ticket_is_reused_and_can_still_close(self):
+        f = fixture()
+        await f.manager.open_ticket(f.interaction(), 'shop')
+        f.channels[0].topic = 'vynex-ticket:v1;owner=42;kind=buy'
+        self.assertEqual(ticket_info(f.channels[0]), (42, 'shop'))
+        await f.manager.open_ticket(f.interaction(), 'shop')
+        f.guild.create_text_channel.assert_awaited_once()
+        self.assertTrue(f.manager.can_close(f.owner, f.channels[0], f.guild.id))
+
+    async def test_migration_waits_for_new_panel_and_only_retires_own_controls(self):
+        f = fixture()
+        f.manager.ensure_panel = AsyncMock(side_effect=RuntimeError('no channel access'))
+        f.manager.retire_old_panels = AsyncMock()
+        with self.assertRaises(RuntimeError): await f.manager.ensure_support()
+        f.manager.retire_old_panels.assert_not_called()
+        f.manager.ensure_panel.side_effect = None
+        await f.manager.ensure_support()
+        f.manager.retire_old_panels.assert_awaited_once()
+
+        f = fixture()
+        controls = [NS(to_dict=lambda: TicketPanel(f.manager).to_components()[0])]
+        original = NS(author=f.me, components=controls, edit=AsyncMock(), pinned=True, unpin=AsyncMock())
+        stranger = NS(author=f.owner, components=controls, edit=AsyncMock())
+        appeal = NS(author=f.me, components=[], edit=AsyncMock())
+        old = MagicMock(spec=discord.TextChannel); old.guild = f.guild
+        old.history = lambda **kw: stream([original, stranger, appeal])
+        f.bot.get_channel = lambda ident: old if ident == LEGACY_PANEL_CHANNEL_ID else f.panel
+        await f.manager.retire_old_panels()
+        original.edit.assert_awaited_once()
+        original.unpin.assert_awaited_once()
+        stranger.edit.assert_not_called(); appeal.edit.assert_not_called()
+        text = original.edit.call_args.kwargs['view'].to_components()[0]['components'][0]['content']
+        self.assertIn(str(PANEL_CHANNEL_ID), text)
 
     async def test_panel_refresh_edits_existing_pinned_panel(self):
         f = fixture()
